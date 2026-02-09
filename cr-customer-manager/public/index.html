@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>C&R Carpet & Rug — Customer Manager</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">C&amp;R</div>
+      <div class="brandtext">
+        <div class="title">C&amp;R Carpet &amp; Rug — Customer Manager</div>
+        <div class="subtitle">Auto-watcher OCR → SQLite → Search → Installer View → PDF</div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button id="btnInstaller" class="btn">Installer View</button>
+      <button id="btnNew" class="btn">New</button>
+      <button id="btnSave" class="btn primary">Save</button>
+      <button id="btnDelete" class="btn danger">Delete</button>
+      <button id="btnPdf" class="btn">Open PDF</button>
+      <label class="btn file">
+        Manual Upload Scan
+        <input id="fileScan" type="file" accept="image/*" />
+      </label>
+      <span id="dbStatus" class="pill">checking…</span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="side">
+      <h2>Search</h2>
+      <input id="q" class="input" placeholder="Search invoice, name, phone, address…" />
+      <div class="hint">Tip: scans dropped into <code>/inbox</code> auto-import.</div>
+      <div id="results" class="results"></div>
+    </aside>
+
+    <section class="content">
+      <div class="panel">
+        <div class="panelhead">
+          <h1>Invoice / Work Order</h1>
+          <span id="status" class="pill">ready</span>
+        </div>
+
+        <div class="grid2">
+          <div>
+            <label>Invoice # (CR #####)</label>
+            <input id="invoice_number" class="input" placeholder="CR 245127" />
+          </div>
+          <div>
+            <label>Order Date</label>
+            <input id="order_date" type="date" class="input" />
+          </div>
+
+          <div>
+            <label>Sold To</label>
+            <input id="sold_to" class="input" />
+          </div>
+          <div>
+            <label>Salesperson</label>
+            <input id="salesperson" class="input" />
+          </div>
+
+          <div class="span2">
+            <label>Directions / Address</label>
+            <input id="directions" class="input" />
+          </div>
+
+          <div>
+            <label>Customer Email</label>
+            <input id="email" class="input" />
+          </div>
+          <div>
+            <label>Home Phone</label>
+            <input id="home_phone" class="input" />
+          </div>
+
+          <div>
+            <label>Cell Phone</label>
+            <input id="cell_phone" class="input" />
+          </div>
+          <div>
+            <label>Installation Date</label>
+            <input id="installation_date" type="date" class="input" />
+          </div>
+
+          <div>
+            <label>Installed By</label>
+            <input id="installed_by" class="input" />
+          </div>
+          <div></div>
+        </div>
+
+        <hr class="sep" />
+
+        <div class="rowhead">
+          <h2>Items</h2>
+          <button id="btnAddItem" class="btn small">+ Add Item</button>
+        </div>
+
+        <div class="tablewrap">
+          <table class="items">
+            <thead>
+              <tr>
+                <th>Description</th>
+                <th>Manufacturer</th>
+                <th>Size</th>
+                <th>Style</th>
+                <th>Color</th>
+                <th>Pad</th>
+                <th>Rug Pad</th>
+                <th class="num">Qty</th>
+                <th class="num">Unit</th>
+                <th class="num">Amount</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="itemsBody"></tbody>
+          </table>
+        </div>
+
+        <hr class="sep" />
+
+        <div class="rowhead">
+          <h2>Totals</h2>
+          <div class="muted">Auto-calculated</div>
+        </div>
+
+        <div class="grid3">
+          <div>
+            <label>Tax Rate (%)</label>
+            <input id="tax_rate" type="number" step="0.01" class="input" value="0" />
+          </div>
+          <div>
+            <label>Deposit ($)</label>
+            <input id="deposit" type="number" step="0.01" class="input" value="0" />
+          </div>
+          <div>
+            <label>Subtotal ($)</label>
+            <input id="subtotal" type="number" step="0.01" class="input" readonly />
+          </div>
+
+          <div>
+            <label>Sales Tax ($)</label>
+            <input id="sales_tax" type="number" step="0.01" class="input" readonly />
+          </div>
+          <div>
+            <label>Total ($)</label>
+            <input id="total" type="number" step="0.01" class="input" readonly />
+          </div>
+          <div>
+            <label>Balance ($)</label>
+            <input id="balance" type="number" step="0.01" class="input" readonly />
+          </div>
+        </div>
+
+        <div class="grid1">
+          <div>
+            <label>Installation Instructions (rooms, stairs, etc.)</label>
+            <textarea id="installation_instructions" class="input area" rows="3"></textarea>
+          </div>
+          <div>
+            <label>Notes</label>
+            <textarea id="notes" class="input area" rows="3"></textarea>
+          </div>
+        </div>
+
+        <div class="grid2">
+          <div>
+            <label>Source Scan</label>
+            <input id="source_path" class="input" placeholder="/uploads/filename.jpg" readonly />
+          </div>
+          <div class="right">
+            <button id="btnOpenScan" class="btn">Open Scan</button>
+            <button id="btnRerunOcr" class="btn">Re-run OCR</button>
+          </div>
+        </div>
+
+        <details class="debug">
+          <summary>OCR Debug (Raw Text)</summary>
+          <textarea id="raw_text" class="input area mono" rows="10" readonly></textarea>
+        </details>
+      </div>
+
+      <div id="installerPanel" class="panel installer hidden">
+        <div class="panelhead">
+          <h1>Installer View</h1>
+          <div class="muted">Big buttons + essential info</div>
+        </div>
+
+        <div class="installerCard">
+          <div class="k">Customer</div><div class="v" id="i_sold_to">—</div>
+          <div class="k">Address</div><div class="v" id="i_directions">—</div>
+          <div class="k">Phones</div><div class="v" id="i_phones">—</div>
+          <div class="k">Install Date</div><div class="v" id="i_install_date">—</div>
+          <div class="k">Installed By</div><div class="v" id="i_installed_by">—</div>
+          <div class="k">Instructions</div><div class="v" id="i_instructions">—</div>
+        </div>
+
+        <div class="installerBtns">
+          <button id="btnBack" class="btn">Back to Editor</button>
+          <button id="btnPdf2" class="btn primary">Open PDF</button>
+          <button id="btnOpenScan2" class="btn">Open Scan</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="index.js"></script>
+</body>
+</html>
