@@ -12,18 +12,18 @@
       <div class="logo">C&amp;R</div>
       <div class="brandtext">
         <div class="title">C&amp;R Carpet &amp; Rug — Customer Manager</div>
-        <div class="subtitle">Auto-watcher OCR → SQLite → Search → Installer View → PDF</div>
+        <div class="subtitle">Smart Invoice Management System</div>
       </div>
     </div>
 
     <div class="actions">
-      <button id="btnInstaller" class="btn">Installer View</button>
-      <button id="btnNew" class="btn">New</button>
-      <button id="btnSave" class="btn primary">Save</button>
-      <button id="btnDelete" class="btn danger">Delete</button>
-      <button id="btnPdf" class="btn">Open PDF</button>
+      <button id="btnInstaller" class="btn">📱 Field View</button>
+      <button id="btnNew" class="btn">✨ New Invoice</button>
+      <button id="btnSave" class="btn primary">💾 Save</button>
+      <button id="btnDelete" class="btn danger">🗑️ Delete</button>
+      <button id="btnPdf" class="btn">📄 Work Order PDF</button>
       <label class="btn file">
-        Manual Upload Scan
+        📷 Upload Scan
         <input id="fileScan" type="file" accept="image/*" />
       </label>
       <span id="dbStatus" class="pill">checking…</span>
@@ -32,16 +32,16 @@
 
   <main class="layout">
     <aside class="side">
-      <h2>Search</h2>
-      <input id="q" class="input" placeholder="Search invoice, name, phone, address…" />
-      <div class="hint">Tip: scans dropped into <code>/inbox</code> auto-import.</div>
+      <h2>🔍 Search Invoices</h2>
+      <input id="q" class="input" placeholder="Search by invoice #, customer name, phone, or address..." />
+      <div class="hint">💡 Tip: Upload a scan or drop images into <code>/inbox</code> folder to automatically create invoices.</div>
       <div id="results" class="results"></div>
     </aside>
 
     <section class="content">
       <div class="panel">
         <div class="panelhead">
-          <h1>Invoice / Work Order</h1>
+          <h1>📋 Invoice / Work Order</h1>
           <span id="status" class="pill">ready</span>
         </div>
 
@@ -97,8 +97,8 @@
         <hr class="sep" />
 
         <div class="rowhead">
-          <h2>Items</h2>
-          <button id="btnAddItem" class="btn small">+ Add Item</button>
+          <h2>🛒 Items & Products</h2>
+          <button id="btnAddItem" class="btn small">➕ Add Item</button>
         </div>
 
         <div class="tablewrap">
@@ -125,8 +125,8 @@
         <hr class="sep" />
 
         <div class="rowhead">
-          <h2>Totals</h2>
-          <div class="muted">Auto-calculated</div>
+          <h2>💰 Totals</h2>
+          <div class="muted">✨ Auto-calculated</div>
         </div>
 
         <div class="grid3">
@@ -170,25 +170,25 @@
 
         <div class="grid2">
           <div>
-            <label>Source Scan</label>
-            <input id="source_path" class="input" placeholder="/uploads/filename.jpg" readonly />
+            <label>📎 Original Scan File</label>
+            <input id="source_path" class="input" placeholder="No scan uploaded yet" readonly />
           </div>
           <div class="right">
-            <button id="btnOpenScan" class="btn">Open Scan</button>
-            <button id="btnRerunOcr" class="btn">Re-run OCR</button>
+            <button id="btnOpenScan" class="btn">📷 View Scan</button>
+            <button id="btnRerunOcr" class="btn">🔄 Re-scan</button>
           </div>
         </div>
 
         <details class="debug">
-          <summary>OCR Debug (Raw Text)</summary>
+          <summary>🔍 Advanced: View Raw Scan Text</summary>
           <textarea id="raw_text" class="input area mono" rows="10" readonly></textarea>
         </details>
       </div>
 
       <div id="installerPanel" class="panel installer hidden">
         <div class="panelhead">
-          <h1>Installer View</h1>
-          <div class="muted">Big buttons + essential info</div>
+          <h1>📱 Field Installer View</h1>
+          <div class="muted">Essential job information for installers</div>
         </div>
 
         <div class="installerCard">
@@ -201,9 +201,9 @@
         </div>
 
         <div class="installerBtns">
-          <button id="btnBack" class="btn">Back to Editor</button>
-          <button id="btnPdf2" class="btn primary">Open PDF</button>
-          <button id="btnOpenScan2" class="btn">Open Scan</button>
+          <button id="btnBack" class="btn">⬅️ Back to Editor</button>
+          <button id="btnPdf2" class="btn primary">📄 View Work Order</button>
+          <button id="btnOpenScan2" class="btn">📷 View Original Scan</button>
         </div>
       </div>
     </section>

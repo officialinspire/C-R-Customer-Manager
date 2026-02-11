@@ -190,24 +190,86 @@ async function checkHealth() {
 }
 
 async function save() {
-  recompute();
-  const payload = readForm();
-  const saved = await api("/api/invoices", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload)
-  });
-  await refreshList($("q").value.trim());
-  fillForm(saved);
+  const statusEl = $("status");
+  const btnSave = $("btnSave");
+
+  try {
+    // Show saving state
+    statusEl.textContent = "saving...";
+    statusEl.style.borderColor = "#f59e0b";
+    statusEl.style.color = "#f59e0b";
+    btnSave.disabled = true;
+    btnSave.style.opacity = "0.6";
+
+    recompute();
+    const payload = readForm();
+    const saved = await api("/api/invoices", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    await refreshList($("q").value.trim());
+    fillForm(saved);
+
+    // Show success state
+    statusEl.textContent = "✓ saved!";
+    statusEl.style.borderColor = "#10b981";
+    statusEl.style.color = "#10b981";
+
+    // Reset after 2 seconds
+    setTimeout(() => {
+      statusEl.textContent = saved.id ? "loaded" : "new";
+      statusEl.style.borderColor = "";
+      statusEl.style.color = "";
+    }, 2000);
+  } catch(e) {
+    statusEl.textContent = "error!";
+    statusEl.style.borderColor = "#ef4444";
+    statusEl.style.color = "#ef4444";
+    throw e;
+  } finally {
+    btnSave.disabled = false;
+    btnSave.style.opacity = "1";
+  }
 }
 
 async function del() {
   if (!current?.id) return;
-  if (!confirm("Delete this invoice?")) return;
-  await api(`/api/invoices/${current.id}`, { method: "DELETE" });
-  current = null;
-  newInvoice();
-  await refreshList($("q").value.trim());
+  if (!confirm("Delete this invoice? This action cannot be undone.")) return;
+
+  const statusEl = $("status");
+  const btnDelete = $("btnDelete");
+
+  try {
+    statusEl.textContent = "deleting...";
+    statusEl.style.borderColor = "#ef4444";
+    statusEl.style.color = "#ef4444";
+    btnDelete.disabled = true;
+    btnDelete.style.opacity = "0.6";
+
+    await api(`/api/invoices/${current.id}`, { method: "DELETE" });
+    current = null;
+    newInvoice();
+    await refreshList($("q").value.trim());
+
+    statusEl.textContent = "✓ deleted";
+    statusEl.style.borderColor = "#10b981";
+    statusEl.style.color = "#10b981";
+
+    setTimeout(() => {
+      statusEl.textContent = "new";
+      statusEl.style.borderColor = "";
+      statusEl.style.color = "";
+    }, 2000);
+  } catch(e) {
+    statusEl.textContent = "error!";
+    statusEl.style.borderColor = "#ef4444";
+    statusEl.style.color = "#ef4444";
+    throw e;
+  } finally {
+    btnDelete.disabled = false;
+    btnDelete.style.opacity = "1";
+  }
 }
 
 function newInvoice() {
@@ -231,6 +293,17 @@ function newInvoice() {
     source_path: "",
     items: [{ description: "Carpet / Rug", qty: 1, unit_price: 0, amount: 0 }]
   });
+
+  const statusEl = $("status");
+  statusEl.textContent = "✨ new invoice";
+  statusEl.style.borderColor = "#3b82f6";
+  statusEl.style.color = "#3b82f6";
+
+  setTimeout(() => {
+    statusEl.textContent = "new";
+    statusEl.style.borderColor = "";
+    statusEl.style.color = "";
+  }, 2000);
 }
 
 function openPdf() {
@@ -245,11 +318,39 @@ function openScan() {
 }
 
 async function uploadScan(file) {
-  const fd = new FormData();
-  fd.append("scan", file);
-  const saved = await api("/api/upload", { method: "POST", body: fd });
-  await refreshList($("q").value.trim());
-  fillForm(saved);
+  const statusEl = $("status");
+
+  try {
+    statusEl.textContent = "processing scan...";
+    statusEl.style.borderColor = "#f59e0b";
+    statusEl.style.color = "#f59e0b";
+
+    const fd = new FormData();
+    fd.append("scan", file);
+    const saved = await api("/api/upload", { method: "POST", body: fd });
+    await refreshList($("q").value.trim());
+    fillForm(saved);
+
+    statusEl.textContent = "✓ scan processed!";
+    statusEl.style.borderColor = "#10b981";
+    statusEl.style.color = "#10b981";
+
+    setTimeout(() => {
+      statusEl.textContent = "loaded";
+      statusEl.style.borderColor = "";
+      statusEl.style.color = "";
+    }, 3000);
+  } catch(e) {
+    statusEl.textContent = "scan error!";
+    statusEl.style.borderColor = "#ef4444";
+    statusEl.style.color = "#ef4444";
+    setTimeout(() => {
+      statusEl.textContent = "ready";
+      statusEl.style.borderColor = "";
+      statusEl.style.color = "";
+    }, 3000);
+    throw e;
+  }
 }
 
 function toggleInstaller(on) {
