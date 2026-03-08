@@ -306,15 +306,6 @@ function ensureIndexes(db) {
   `);
 }
 
-export function getInvoiceForm(_db, _invoiceId) {
-  // Legacy response shape for old clients; canonical data now lives on invoices row.
-  return null;
-}
-
-export function upsertInvoiceForm() {
-  // No-op. Form fields now persist directly on invoices.
-}
-
 export function computeTotals(payload) {
   const merchandise_total = round2(Number(payload.merchandise_total ?? payload.subtotal ?? payload.amount ?? 0));
   const sales_tax = round2(Number(payload.sales_tax ?? 0));
