@@ -236,6 +236,13 @@ label{
   transform: scale(1.05);
 }
 
+
+.input.invalid{border-color:var(--bad)!important; box-shadow:0 0 0 3px rgba(239,68,68,0.15)!important}
+.field-error{color:var(--bad); font-size:12px; margin-top:6px; min-height:16px; font-weight:600}
+#itemsBody_err{padding:8px 12px 0}
+.pill.status-ok{border-color:var(--good); color:var(--good)}
+.pill.status-warn{border-color:#f59e0b; color:#b45309}
+.pill.status-bad{border-color:var(--bad); color:var(--bad)}
 .debug{margin-top:16px; border: 2px solid var(--line); padding: 16px; border-radius: 12px; background: var(--panel2)}
 .debug summary{cursor:pointer; color:var(--text); font-weight:700; font-size: 14px}
 .debug textarea{margin-top: 12px}

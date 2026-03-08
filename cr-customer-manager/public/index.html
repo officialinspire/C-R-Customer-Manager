@@ -33,7 +33,7 @@
   <main class="layout">
     <aside class="side">
       <h2>🔍 Search Invoices</h2>
-      <input id="q" class="input" placeholder="Search by invoice #, customer name, phone, or address..." />
+      <input id="q" class="input" placeholder="Search by invoice #, customer, phones, address, installer, notes, or OCR text..." />
       <div class="hint">💡 Tip: Upload a scan or drop images into <code>/inbox</code> folder to automatically create invoices.</div>
       <div id="results" class="results"></div>
     </aside>
@@ -102,6 +102,7 @@
         </div>
 
         <div class="tablewrap">
+          <div id="itemsBody_err" class="field-error"></div>
           <table class="items">
             <thead>
               <tr>
