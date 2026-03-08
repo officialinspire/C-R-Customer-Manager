@@ -3,6 +3,12 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#1a1a2e" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="C&R CRM" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
   <title>C&R Carpet & Rug — Customer Manager</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -256,5 +262,14 @@
   </main>
 
   <script src="index.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+          .then(r => console.log('[SW] registered:', r.scope))
+          .catch(e => console.warn('[SW] registration failed:', e));
+      });
+    }
+  </script>
 </body>
 </html>
