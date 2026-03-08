@@ -48,6 +48,23 @@ function normalizeInvoiceNumber(value) {
   return `CR ${digits.slice(0, 5).padStart(5, "0")}`;
 }
 
+function cleanFilePart(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 28);
+}
+
+function money(value) {
+  return `$${Number(value || 0).toFixed(2)}`;
+}
+
+function textOrBlank(value) {
+  const v = String(value || "").trim();
+  return v || "—";
+}
+
 app.get("/api/health", (req, res) => {
   res.json({ ok: true, db: "ok", time: nowISO(), port: PORT });
 });
@@ -458,60 +475,156 @@ app.get("/api/invoices/:id/pdf", (req, res) => {
   const inv = getInvoice(Number(req.params.id));
   if (!inv) return res.status(404).end();
 
-  res.setHeader("Content-Type", "application/pdf");
-  res.setHeader("Content-Disposition", `inline; filename="C_R_WorkOrder_${inv.invoice_number || inv.id}.pdf"`);
+  const safeInvoice = cleanFilePart(inv.invoice_number || `invoice-${inv.id}`) || `invoice-${inv.id}`;
+  const safeCustomer = cleanFilePart(inv.sold_to || "customer") || "customer";
+  const fileName = `cr-work-order-form_${safeInvoice}_${safeCustomer}.pdf`;
 
-  const doc = new PDFDocument({ margin: 36 });
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `inline; filename="${fileName}"`);
+
+  const doc = new PDFDocument({ margin: 24, size: "LETTER" });
   doc.pipe(res);
 
-  doc.fontSize(18).text("C&R Carpet & Rug — Work Order");
-  doc.moveDown(0.5);
+  const drawField = (label, value, x, y, width, opts = {}) => {
+    const fieldHeight = opts.height || 22;
+    const labelSize = opts.labelSize || 7;
+    const valueSize = opts.valueSize || 10;
+    doc.font("Helvetica-Bold").fontSize(labelSize).fillColor("#333").text(label.toUpperCase(), x + 4, y + 2, {
+      width: width - 8
+    });
+    doc.rect(x, y + 10, width, fieldHeight).lineWidth(0.8).stroke("#222");
+    doc.font("Helvetica").fontSize(valueSize).fillColor("#000").text(textOrBlank(value), x + 4, y + 15, {
+      width: width - 8,
+      height: fieldHeight - 4,
+      ellipsis: true
+    });
+  };
 
-  doc.fontSize(10).text(`Invoice: ${inv.invoice_number || ""}`);
-  doc.text(`Sold To: ${inv.sold_to || ""}`);
-  doc.text(`Directions: ${inv.directions || ""}`);
-  doc.text(`Email: ${inv.customer_email || inv.email || ""}`);
-  doc.text(`Home: ${inv.home_phone || ""}  Cell: ${inv.cell_phone || ""}`);
-  doc.text(`Order Date: ${inv.order_date || ""}   Install Date: ${inv.installation_date || ""}`);
-  doc.text(`Installed By: ${inv.installed_by || ""}   Salesperson: ${inv.salesperson || ""}`);
-  doc.moveDown();
-
-  doc.fontSize(12).text("Items (legacy optional)");
-  doc.moveDown(0.3);
-
-  const cols = { desc: 36, mfg: 210, size: 320, style: 400, amt: 520 };
-  doc.fontSize(9).text("Desc", cols.desc, doc.y);
-  doc.text("Mfg", cols.mfg, doc.y);
-  doc.text("Size", cols.size, doc.y);
-  doc.text("Style", cols.style, doc.y);
-  doc.text("Amount", cols.amt, doc.y);
-  doc.moveDown(0.6);
-
-  let y = doc.y;
-  for (const it of inv.items || []) {
-    doc.text(it.description || "", cols.desc, y, { width: 160 });
-    doc.text(it.manufacturer || "", cols.mfg, y, { width: 105 });
-    doc.text(it.size || "", cols.size, y, { width: 75 });
-    doc.text(it.style || "", cols.style, y, { width: 110 });
-    doc.text(`$${Number(it.amount || 0).toFixed(2)}`, cols.amt, y);
-    y += 34;
-    if (y > 700) {
-      doc.addPage();
-      y = doc.y;
+  const drawCheck = (label, checked, x, y) => {
+    doc.rect(x, y, 10, 10).lineWidth(0.8).stroke("#222");
+    if (checked) {
+      doc.moveTo(x + 2, y + 5).lineTo(x + 4, y + 8).lineTo(x + 8, y + 2).lineWidth(1.4).stroke("#111");
     }
+    doc.font("Helvetica").fontSize(8).fillColor("#111").text(label, x + 14, y - 1);
+  };
+
+  const width = doc.page.width;
+  const contentLeft = 24;
+  const contentRight = width - 24;
+  const contentWidth = contentRight - contentLeft;
+  const colGap = 8;
+  const leftCol = 460;
+  const rightCol = contentWidth - leftCol - colGap;
+
+  let y = 24;
+  doc.font("Helvetica-Bold").fontSize(17).text("C&R CARPET & RUG", contentLeft, y);
+  doc.font("Helvetica").fontSize(9).text("WORK ORDER / SALES FORM", contentLeft, y + 20);
+  drawField("Invoice #", inv.invoice_number, contentRight - 180, y - 2, 180, { valueSize: 12 });
+
+  y += 42;
+  doc.rect(contentLeft, y, contentWidth, 20).lineWidth(0.8).stroke("#222");
+  doc.font("Helvetica-Bold").fontSize(8).text("Lead Source", contentLeft + 6, y + 6);
+  drawCheck("Ad", inv.heard_ad, contentLeft + 90, y + 5);
+  drawCheck("Radio", inv.heard_radio, contentLeft + 150, y + 5);
+  drawCheck("Friend", inv.heard_friend, contentLeft + 220, y + 5);
+  drawCheck("Internet", inv.heard_internet, contentLeft + 300, y + 5);
+  drawCheck("Walk-in", inv.heard_walkin, contentLeft + 390, y + 5);
+
+  y += 26;
+  drawField("Sold To", inv.sold_to, contentLeft, y, 300);
+  drawField("Date", inv.order_date, contentLeft + 308, y, 110);
+  drawField("Salesperson", inv.salesperson, contentLeft + 426, y, 162);
+
+  y += 36;
+  drawField("Directions / Address", inv.directions, contentLeft, y, 420);
+  drawField("Customer Email", inv.customer_email || inv.email, contentLeft + 428, y, 160);
+
+  y += 36;
+  drawField("Home Phone", inv.home_phone, contentLeft, y, 145);
+  drawField("Cell Phone", inv.cell_phone, contentLeft + 153, y, 145);
+  drawField("Installation Date", inv.installation_date, contentLeft + 306, y, 140);
+  drawField("Installed By", inv.installed_by, contentLeft + 454, y, 134);
+
+  y += 38;
+  doc.rect(contentLeft, y, leftCol, 190).lineWidth(0.8).stroke("#222");
+  doc.font("Helvetica-Bold").fontSize(8).text("Merchandise", contentLeft + 6, y + 4);
+
+  drawField("Manufacturer", inv.manufacturer, contentLeft + 8, y + 16, 168);
+  drawField("Size", inv.size, contentLeft + 184, y + 16, 86);
+  drawField("Style", inv.style, contentLeft + 278, y + 16, 174);
+  drawField("Color", inv.color, contentLeft + 8, y + 52, 130);
+  drawField("Pad", inv.pad, contentLeft + 146, y + 52, 150);
+  drawField("Rug Pad", inv.rug_pad, contentLeft + 304, y + 52, 148);
+  drawField("Unit Price", money(inv.unit_price), contentLeft + 8, y + 88, 150);
+  drawField("Amount", money(inv.amount), contentLeft + 166, y + 88, 150);
+
+  doc.font("Helvetica-Bold").fontSize(8).text("Install Room Grid", contentLeft + 8, y + 130);
+  const rooms = [
+    ["LVG RM", inv.install_lvg_rm], ["DIN RM", inv.install_din_rm], ["FAM RM", inv.install_fam_rm],
+    ["BDRM 1", inv.install_bdrm1], ["BDRM 2", inv.install_bdrm2], ["BDRM 3", inv.install_bdrm3],
+    ["BDRM 4", inv.install_bdrm4], ["HALL", inv.install_hall], ["STAIRS", inv.install_stairs],
+    ["CLOSET", inv.install_closet], ["BASEMENT", inv.install_basement]
+  ];
+  rooms.forEach(([label, checked], index) => {
+    const col = index % 3;
+    const row = Math.floor(index / 3);
+    drawCheck(label, checked, contentLeft + 8 + (col * 145), y + 144 + (row * 14));
+  });
+
+  const rightX = contentLeft + leftCol + colGap;
+  doc.rect(rightX, y, rightCol, 190).lineWidth(0.8).stroke("#222");
+  doc.font("Helvetica-Bold").fontSize(8).text("Totals & Payment", rightX + 6, y + 4);
+  drawField("Merchandise Total", money(inv.merchandise_total), rightX + 8, y + 16, rightCol - 16);
+  drawField("Sales Tax", money(inv.sales_tax), rightX + 8, y + 52, rightCol - 16);
+  drawField("Total Sale", money(inv.total_sale), rightX + 8, y + 88, rightCol - 16);
+  drawField("Deposit", money(inv.deposit), rightX + 8, y + 124, rightCol - 16);
+  drawField("Balance", money(inv.balance), rightX + 8, y + 160, rightCol - 16);
+
+  y += 198;
+  doc.rect(contentLeft, y, contentWidth, 44).lineWidth(0.8).stroke("#222");
+  doc.font("Helvetica-Bold").fontSize(8).text("Payment Method", contentLeft + 6, y + 4);
+  drawCheck("Cash", inv.payment_cash, contentLeft + 110, y + 6);
+  drawCheck("Check", inv.payment_check, contentLeft + 180, y + 6);
+  drawCheck("Charge", inv.payment_charge, contentLeft + 255, y + 6);
+  drawCheck("Financing", inv.payment_financing, contentLeft + 338, y + 6);
+  drawField("Buyer Name", inv.buyer_name, contentLeft + 8, y + 20, 360);
+  drawField("Buyer Date", inv.buyer_date, contentLeft + 376, y + 20, 212);
+
+  y += 50;
+  const notesTitleY = y;
+  const notesBoxHeight = 86;
+  doc.rect(contentLeft, notesTitleY, contentWidth, notesBoxHeight).lineWidth(0.8).stroke("#222");
+  doc.font("Helvetica-Bold").fontSize(8).text("Notes / Install Instructions", contentLeft + 6, notesTitleY + 4);
+
+  const notesText = [inv.installation_instructions, inv.notes].filter(Boolean).join("\n\n");
+  const notesX = contentLeft + 8;
+  const notesY = notesTitleY + 16;
+  const notesWidth = contentWidth - 16;
+  const notesHeight = notesBoxHeight - 20;
+  const lineHeight = 11;
+  const maxLines = Math.floor(notesHeight / lineHeight);
+  const wrapped = notesText ? doc.heightOfString(notesText, { width: notesWidth, lineGap: 1 }) : 0;
+  const visibleHeight = maxLines * lineHeight;
+  const hasOverflow = wrapped > visibleHeight;
+
+  doc.font("Helvetica").fontSize(9).fillColor("#111").text(notesText || "—", notesX, notesY, {
+    width: notesWidth,
+    height: notesHeight,
+    ellipsis: hasOverflow ? "…" : false,
+    lineGap: 1
+  });
+
+  if (hasOverflow) {
+    doc.addPage();
+    doc.font("Helvetica-Bold").fontSize(14).text("Notes / Install Instructions (continued)", contentLeft, 32);
+    doc.font("Helvetica").fontSize(10).text(`Invoice ${textOrBlank(inv.invoice_number)}  •  ${textOrBlank(inv.sold_to)}`, contentLeft, 50);
+    doc.rect(contentLeft, 72, contentWidth, doc.page.height - 96).lineWidth(0.8).stroke("#222");
+    doc.font("Helvetica").fontSize(10).text(notesText, contentLeft + 10, 82, {
+      width: contentWidth - 20,
+      height: doc.page.height - 116,
+      lineGap: 2
+    });
   }
-
-  doc.moveDown();
-  doc.fontSize(12).text("Install Instructions");
-  doc.fontSize(10).text(inv.installation_instructions || "(none)");
-  doc.moveDown();
-
-  doc.fontSize(12).text("Totals");
-  doc.fontSize(10).text(`Merchandise Total: $${Number(inv.merchandise_total || 0).toFixed(2)}`);
-  doc.text(`Sales Tax: $${Number(inv.sales_tax || 0).toFixed(2)}`);
-  doc.text(`Total Sale: $${Number(inv.total_sale || 0).toFixed(2)}`);
-  doc.text(`Deposit: $${Number(inv.deposit || 0).toFixed(2)}`);
-  doc.text(`Balance: $${Number(inv.balance || 0).toFixed(2)}`);
 
   doc.end();
 });
