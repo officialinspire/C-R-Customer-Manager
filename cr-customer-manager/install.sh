@@ -16,6 +16,9 @@ rm -rf node_modules package-lock.json
 echo "[3/5] Installing npm deps..."
 npm install
 
+echo "[4b/5] Generating PWA icons..."
+node scripts/generate-icons.js || echo "[WARN] Icon generation failed — add icons manually to public/icons/"
+
 echo "[4/5] Rebuilding better-sqlite3 (native binding) ..."
 npm rebuild better-sqlite3 --build-from-source || true
 
