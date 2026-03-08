@@ -153,6 +153,18 @@ code{
 .result .t{font-weight:700; font-size: 15px; color: var(--text)}
 .result .m{font-size:13px;color:var(--muted);margin-top:6px; font-weight: 500}
 
+.result.empty{
+  cursor:default;
+  color:var(--muted);
+  font-weight:600;
+}
+.result.empty:hover{
+  transform:none;
+  border-color:var(--line);
+  box-shadow:none;
+  background:var(--panel2);
+}
+
 .content{display:flex; flex-direction:column; gap:20px}
 .panel{padding:24px}
 

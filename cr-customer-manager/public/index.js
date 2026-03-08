@@ -61,6 +61,10 @@ const REVIEW_FIELDS = [
   "invoice_number", "sold_to", "directions", "email", "order_date", "home_phone", "cell_phone", "installation_date", "installed_by", "salesperson"
 ];
 
+const REVIEW_FIELD_MAP = {
+  email: "customer_email"
+};
+
 const INSTALL_ROOM_FIELDS = [
   ["install_lvg_rm", "Living room"],
   ["install_din_rm", "Dining room"],
@@ -376,14 +380,11 @@ function readForm() {
 function applyReviewHighlights() {
   document.querySelectorAll(".review-flag").forEach((el) => el.classList.remove("review-flag"));
   const low = new Set(current?.low_confidence_fields || []);
-  const map = {
-    customer_email: "email",
-    amount: "total"
-  };
   REVIEW_FIELDS.forEach((key) => {
-    const input = $(map[key] || key);
+    const input = $(key);
     if (!input) return;
-    const isLow = low.has(key);
+    const canonicalKey = REVIEW_FIELD_MAP[key] || key;
+    const isLow = low.has(canonicalKey);
     const empty = !String(input.value || "").trim();
     if (isLow || empty) input.classList.add("review-flag");
   });
@@ -397,9 +398,10 @@ function fillReviewPanel(inv) {
   $("reviewImage").classList.toggle("hidden", !inv.source_path);
 
   const rows = REVIEW_FIELDS.map((field) => {
-    const value = inv[field] || "";
-    const conf = inv.field_confidence?.[field === "email" ? "customer_email" : field];
-    const lowFlag = low.includes(field === "email" ? "customer_email" : field) || !String(value).trim();
+    const canonicalKey = REVIEW_FIELD_MAP[field] || field;
+    const value = inv[field] || inv[canonicalKey] || "";
+    const conf = inv.field_confidence?.[canonicalKey];
+    const lowFlag = low.includes(canonicalKey) || !String(value).trim();
     return `<tr class="${lowFlag ? "low" : ""}"><td>${escapeHtml(field)}</td><td>${escapeHtml(String(value))}</td><td>${conf ?? "—"}</td></tr>`;
   }).join("");
   $("reviewTableBody").innerHTML = rows;
@@ -446,6 +448,15 @@ async function refreshList(q = "") {
   const rows = await api(`/api/invoices${q ? `?q=${encodeURIComponent(q)}` : ""}`);
   const wrap = $("results");
   wrap.innerHTML = "";
+
+  if (!rows.length) {
+    const empty = document.createElement("div");
+    empty.className = "result empty";
+    empty.textContent = q ? "No invoices matched your search." : "No invoices yet. Create a new one or upload a scan.";
+    wrap.appendChild(empty);
+    return;
+  }
+
   rows.forEach((r) => {
     const el = document.createElement("div");
     el.className = "result";
