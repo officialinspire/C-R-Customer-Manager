@@ -40,6 +40,33 @@ function asBoolInt(v) {
   return v ? 1 : 0;
 }
 
+function normalizeInvoiceNumber(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const digits = raw.replace(/[^0-9]/g, "");
+  if (!digits) return raw.toUpperCase().replace(/\s+/g, " ");
+  return `CR ${digits}`;
+}
+
+function resolveUploadPath(sourcePath, sourceFilename) {
+  const cleanFilename = path.basename(String(sourceFilename || "").trim());
+  if (cleanFilename) {
+    const byName = path.join(UPLOADS_DIR, cleanFilename);
+    if (fs.existsSync(byName)) return byName;
+  }
+
+  const cleanSourcePath = String(sourcePath || "").trim();
+  if (!cleanSourcePath) return "";
+
+  if (cleanSourcePath.startsWith("/uploads/")) {
+    const rel = cleanSourcePath.slice("/uploads/".length);
+    const candidate = path.join(UPLOADS_DIR, path.basename(rel));
+    if (fs.existsSync(candidate)) return candidate;
+  }
+
+  return "";
+}
+
 app.get("/api/health", (req, res) => {
   res.json({ ok: true, db: "ok", time: nowISO(), port: PORT });
 });
@@ -76,7 +103,7 @@ function buildInvoicePayload(payload) {
 
   return {
     id: payload.id || null,
-    invoice_number: payload.invoice_number || form.header_invoice_number || "",
+    invoice_number: normalizeInvoiceNumber(payload.invoice_number || form.header_invoice_number || ""),
     sold_to: payload.sold_to || form.customer_name || "",
     directions: payload.directions || form.service_address || "",
     customer_email: payload.customer_email || payload.email || form.customer_email || "",
@@ -285,6 +312,7 @@ function upsertInvoice(payload) {
 
 app.get("/api/invoices", (req, res) => {
   const q = String(req.query.q || "").trim();
+  const field = String(req.query.field || "all").trim().toLowerCase();
   if (!q) {
     const rows = db.prepare(`
       SELECT id, invoice_number, sold_to, installation_date, total_sale AS total, updated_at
@@ -296,13 +324,36 @@ app.get("/api/invoices", (req, res) => {
   }
 
   const like = `%${q}%`;
-  const rows = db.prepare(`
+  const searchableFields = {
+    invoice: "invoice_number",
+    customer: "sold_to",
+    address: "directions",
+    phone: "(home_phone || ' ' || cell_phone)",
+    email: "customer_email",
+    installer: "installed_by",
+    salesperson: "salesperson",
+    notes: "notes",
+    scan: "source_filename"
+  };
+
+  const allQuery = `
     SELECT id, invoice_number, sold_to, installation_date, total_sale AS total, updated_at
     FROM invoices
     WHERE invoice_number LIKE ? OR sold_to LIKE ? OR directions LIKE ? OR home_phone LIKE ? OR cell_phone LIKE ?
+      OR customer_email LIKE ? OR installed_by LIKE ? OR salesperson LIKE ? OR notes LIKE ? OR source_filename LIKE ?
     ORDER BY updated_at DESC
     LIMIT 250
-  `).all(like, like, like, like, like);
+  `;
+
+  const rows = field === "all" || !searchableFields[field]
+    ? db.prepare(allQuery).all(like, like, like, like, like, like, like, like, like, like)
+    : db.prepare(`
+      SELECT id, invoice_number, sold_to, installation_date, total_sale AS total, updated_at
+      FROM invoices
+      WHERE ${searchableFields[field]} LIKE ?
+      ORDER BY updated_at DESC
+      LIMIT 250
+    `).all(like);
 
   res.json(rows);
 });
@@ -319,10 +370,56 @@ app.post("/api/invoices", (req, res) => {
     res.json(saved);
   } catch (e) {
     console.error(e);
-    if (String(e.message || "").includes("idx_invoices_invoice_number_nonempty_unique")) {
-      return res.status(409).json({ error: "invoice_number must be unique when provided" });
+    const msg = String(e.message || "");
+    if (msg.includes("idx_invoices_invoice_number_nonempty_unique") || msg.includes("invoices.invoice_number")) {
+      return res.status(409).json({
+        error: "Invoice number already exists. Use a different invoice number.",
+        code: "DUPLICATE_INVOICE_NUMBER"
+      });
     }
     res.status(500).json({ error: "Save failed" });
+  }
+});
+
+app.post("/api/invoices/:id/rescan", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const existing = getInvoice(id);
+    if (!existing) return res.status(404).json({ error: "Invoice not found" });
+
+    const sourceFile = resolveUploadPath(existing.source_path, existing.source_filename);
+    if (!sourceFile) {
+      return res.status(400).json({ error: "Original scan file was not found for this invoice." });
+    }
+
+    const raw = await ocrImageToText(sourceFile);
+    const extracted = extractFromOCR(raw);
+    const saved = upsertInvoice({
+      ...existing,
+      invoice_number: extracted.invoice_number || existing.invoice_number,
+      sold_to: extracted.sold_to || existing.sold_to,
+      directions: extracted.directions || existing.directions,
+      customer_email: extracted.customer_email || existing.customer_email,
+      email: extracted.customer_email || existing.customer_email,
+      order_date: extracted.order_date || existing.order_date,
+      home_phone: extracted.home_phone || existing.home_phone,
+      cell_phone: extracted.cell_phone || existing.cell_phone,
+      installation_date: extracted.installation_date || existing.installation_date,
+      installed_by: extracted.installed_by || existing.installed_by,
+      salesperson: extracted.salesperson || existing.salesperson,
+      items: extracted.items?.length ? extracted.items : existing.items,
+      form: extracted.form || existing.form,
+      raw_text: raw,
+      source_filename: existing.source_filename,
+      source_path: existing.source_path,
+      ocr_status: "processed",
+      ocr_confidence: existing.ocr_confidence || 0
+    });
+
+    res.json(saved);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Re-scan failed" });
   }
 });
 

@@ -33,6 +33,18 @@
   <main class="layout">
     <aside class="side">
       <h2>🔍 Search Invoices</h2>
+      <select id="qField" class="input">
+        <option value="all">All fields</option>
+        <option value="invoice">Invoice #</option>
+        <option value="customer">Customer</option>
+        <option value="address">Address</option>
+        <option value="phone">Phone</option>
+        <option value="email">Email</option>
+        <option value="installer">Installer</option>
+        <option value="salesperson">Salesperson</option>
+        <option value="notes">Notes</option>
+        <option value="scan">Scan filename</option>
+      </select>
       <input id="q" class="input" placeholder="Search by invoice #, customer name, phone, or address..." />
       <div class="hint">💡 Tip: Upload a scan or drop images into <code>/inbox</code> folder to automatically create invoices.</div>
       <div id="results" class="results"></div>

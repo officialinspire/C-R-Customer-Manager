@@ -296,3 +296,15 @@ label{
   .btn{padding: 10px 14px; font-size: 13px; min-width: 120px}
   .actions{gap: 8px}
 }
+
+
+.pill[data-kind="neutral"]{border-color:var(--line);color:var(--muted)}
+.pill[data-kind="working"]{border-color:#f59e0b;color:#b45309}
+.pill[data-kind="success"]{border-color:var(--good);color:var(--good)}
+.pill[data-kind="error"]{border-color:var(--bad);color:var(--bad)}
+.pill[data-kind="info"]{border-color:var(--primary);color:var(--primary)}
+
+.error-msg{min-height:18px;color:var(--bad);font-size:12px;font-weight:600;margin-top:4px}
+.input-error{border-color:var(--bad)!important;box-shadow:0 0 0 3px rgba(239,68,68,0.12)!important}
+
+.side select.input{margin-bottom:10px}
