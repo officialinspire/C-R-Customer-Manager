@@ -634,6 +634,30 @@ async function init() {
   setOverlayButtonState();
 
   await checkHealth();
+
+  function updateOnlineStatus() {
+    const offline = !navigator.onLine;
+    document.getElementById('offlineBanner').classList.toggle('hidden', !offline);
+    document.getElementById('syncStatus').textContent = offline ? '📵 offline' : '✅ online';
+  }
+
+  window.addEventListener('online', updateOnlineStatus);
+  window.addEventListener('offline', updateOnlineStatus);
+  updateOnlineStatus();
+
+  // Listen for sync queue events from service worker
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', (event) => {
+      if (event.data?.type === 'SYNC_COMPLETE') {
+        document.getElementById('syncStatus').textContent = '✅ synced';
+        refreshList(document.getElementById('q').value.trim());
+      }
+      if (event.data?.type === 'SYNC_QUEUED') {
+        document.getElementById('syncStatus').textContent = '🕐 queued';
+      }
+    });
+  }
+
   await refreshList("");
   newInvoice();
 }

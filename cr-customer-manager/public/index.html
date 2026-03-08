@@ -13,6 +13,9 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <div id="offlineBanner" class="offline-banner hidden" role="alert" aria-live="polite">
+    ⚡ Offline mode — changes will sync when you reconnect
+  </div>
   <header class="topbar">
     <div class="brand">
       <div class="logo">C&amp;R</div>
@@ -34,6 +37,7 @@
         <input id="fileScan" type="file" accept="image/*,.pdf,.tif,.tiff" />
       </label>
       <span id="dbStatus" class="pill">checking…</span>
+      <span id="syncStatus" class="pill">⬆️ synced</span>
     </div>
   </header>
 
