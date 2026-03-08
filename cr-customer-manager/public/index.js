@@ -231,6 +231,7 @@ function clearErrors() {
 }
 
 function validateForm() {
+  if (!current) return true;
   clearErrors();
   const errors = {};
   const soldTo = $("sold_to").value.trim();
@@ -245,9 +246,10 @@ function validateForm() {
   if (deposit < 0) errors.deposit = "Deposit cannot be negative.";
   if (deposit > total) errors.deposit = "Deposit cannot be greater than total.";
 
-  if (!current?.items?.length) {
+  const items = current?.items || [];
+  if (!items.length) {
     errors.itemsBody = "At least one item is required.";
-  } else if (!current.items.some((item) => item.description || Number(item.amount) > 0 || Number(item.qty) > 0)) {
+  } else if (!items.some((item) => item.description || Number(item.amount) > 0 || Number(item.qty) > 0)) {
     errors.itemsBody = "Add an item description or amount before saving.";
   }
 
@@ -351,7 +353,7 @@ function readForm() {
     deposit: Number($("deposit").value || 0),
     installation_instructions: $("installation_instructions").value,
     notes: $("notes").value,
-    raw_text: $("raw_text").value,
+    raw_text: $("raw_text")?.value ?? current?.raw_text ?? "",
     source_path: $("source_path").value,
     items: current?.items || [],
     ocr_status: "reviewed",
@@ -597,9 +599,9 @@ async function init() {
   $("btnSave").addEventListener("click", () => save().catch(alert));
   $("btnDelete").addEventListener("click", () => del().catch(alert));
   $("btnPdf").addEventListener("click", openPdf);
-  $("btnPdf2").addEventListener("click", openPdf);
+  $("btnPdf2")?.addEventListener("click", openPdf);
   $("btnOpenScan").addEventListener("click", openScan);
-  $("btnOpenScan2").addEventListener("click", openScan);
+  $("btnOpenScan2")?.addEventListener("click", openScan);
   $("btnRerunOcr").addEventListener("click", () => rescanCurrentInvoice().catch(alert));
 
   $("btnAddItem").addEventListener("click", () => {
@@ -627,7 +629,7 @@ async function init() {
 
   $("btnInstaller").addEventListener("click", () => toggleInstaller(!installerMode));
   $("btnOverlay").addEventListener("click", () => toggleOverlay(!overlayMode));
-  $("btnBack").addEventListener("click", () => toggleInstaller(false));
+  $("btnBack")?.addEventListener("click", () => toggleInstaller(false));
 
   setOverlayButtonState();
 
