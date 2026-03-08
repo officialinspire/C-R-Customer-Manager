@@ -1,0 +1,16 @@
+appId: com.crcarpet.crm
+productName: C&R Carpet Manager
+directories:
+  output: dist
+files:
+  - "**/*"
+  - "!node_modules/.cache"
+  - "!dist"
+win:
+  target: nsis
+  icon: public/icons/icon-512.png
+nsis:
+  oneClick: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: C&R Carpet Manager
