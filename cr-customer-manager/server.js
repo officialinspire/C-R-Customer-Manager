@@ -5,7 +5,7 @@ import chokidar from "chokidar";
 import multer from "multer";
 import PDFDocument from "pdfkit";
 
-import { openDb, computeTotals, getInvoiceForm, upsertInvoiceForm } from "./db.js";
+import { openDb, computeTotals } from "./db.js";
 import { ocrImageToText } from "./ocr.js";
 import { extractFromOCR } from "./parse.js";
 
@@ -36,6 +36,10 @@ function nowISO() {
   return new Date().toISOString();
 }
 
+function asBoolInt(v) {
+  return v ? 1 : 0;
+}
+
 app.get("/api/health", (req, res) => {
   res.json({ ok: true, db: "ok", time: nowISO(), port: PORT });
 });
@@ -46,160 +50,244 @@ function getInvoice(id) {
   const items = db
     .prepare(`SELECT * FROM invoice_items WHERE invoice_id=? ORDER BY line_no ASC, id ASC`)
     .all(id);
-  const form = getInvoiceForm(db, id);
-  return { ...inv, items, form };
+
+  // Legacy compatibility payload for existing clients.
+  return {
+    ...inv,
+    email: inv.customer_email || inv.email || "",
+    total: inv.total_sale,
+    subtotal: inv.merchandise_total,
+    items,
+    form: null
+  };
 }
 
-function buildLegacyPayloadFromForm(payload) {
+function buildInvoicePayload(payload) {
   const form = payload?.form || {};
+  const now = nowISO();
+  const totals = computeTotals({
+    ...payload,
+    merchandise_total: payload.merchandise_total ?? form.merchandise_total,
+    sales_tax: payload.sales_tax ?? form.sales_tax,
+    total_sale: payload.total_sale ?? form.total_sale,
+    deposit: payload.deposit ?? form.deposit,
+    balance: payload.balance ?? form.balance
+  });
 
-  // Migration bridge: the UI currently posts legacy invoice fields.
-  // New form-first clients can post payload.form and still be persisted
-  // to both legacy columns and normalized tables during transition.
   return {
+    id: payload.id || null,
     invoice_number: payload.invoice_number || form.header_invoice_number || "",
     sold_to: payload.sold_to || form.customer_name || "",
     directions: payload.directions || form.service_address || "",
-    email: payload.email || form.customer_email || "",
+    customer_email: payload.customer_email || payload.email || form.customer_email || "",
     order_date: payload.order_date || form.order_date || "",
     home_phone: payload.home_phone || form.home_phone || "",
     cell_phone: payload.cell_phone || form.cell_phone || "",
     installation_date: payload.installation_date || form.installation_date || "",
     installed_by: payload.installed_by || form.installed_by || "",
     salesperson: payload.salesperson || form.salesperson || "",
-    deposit: payload.deposit ?? form.deposit ?? 0,
-    installation_instructions: payload.installation_instructions || form.install_area_notes || ""
-  };
-}
 
-function upsertInvoice(payload) {
-  const mergedLegacy = buildLegacyPayloadFromForm(payload);
-  const totals = computeTotals(payload);
+    heard_ad: asBoolInt(payload.heard_ad ?? form.heard_ad),
+    heard_radio: asBoolInt(payload.heard_radio ?? form.heard_radio),
+    heard_friend: asBoolInt(payload.heard_friend ?? form.heard_friend),
+    heard_internet: asBoolInt(payload.heard_internet ?? form.heard_internet),
+    heard_walkin: asBoolInt(payload.heard_walkin ?? form.heard_walkin),
 
-  const inv = {
-    id: payload.id || null,
-    invoice_number: mergedLegacy.invoice_number,
-    sold_to: mergedLegacy.sold_to,
-    directions: mergedLegacy.directions,
-    email: mergedLegacy.email,
-    order_date: mergedLegacy.order_date,
-    home_phone: mergedLegacy.home_phone,
-    cell_phone: mergedLegacy.cell_phone,
-    installation_date: mergedLegacy.installation_date,
-    installed_by: mergedLegacy.installed_by,
-    salesperson: mergedLegacy.salesperson,
+    manufacturer: payload.manufacturer || form.manufacturer || "",
+    size: payload.size || form.size || "",
+    style: payload.style || form.style || "",
+    color: payload.color || form.color || "",
+    pad: payload.pad || form.pad || "",
+    rug_pad: payload.rug_pad || form.rug_pad || "",
+    unit_price: Number(payload.unit_price ?? form.unit_price ?? 0),
+    amount: Number(payload.amount ?? form.amount ?? 0),
 
-    tax_rate: Number(payload.tax_rate || 0),
-    deposit: Number(mergedLegacy.deposit || 0),
+    install_lvg_rm: asBoolInt(payload.install_lvg_rm ?? form.install_lvg_rm),
+    install_din_rm: asBoolInt(payload.install_din_rm ?? form.install_din_rm),
+    install_bdrm1: asBoolInt(payload.install_bdrm1 ?? form.install_bdrm1),
+    install_bdrm2: asBoolInt(payload.install_bdrm2 ?? form.install_bdrm2),
+    install_bdrm3: asBoolInt(payload.install_bdrm3 ?? form.install_bdrm3),
+    install_bdrm4: asBoolInt(payload.install_bdrm4 ?? form.install_bdrm4),
+    install_hall: asBoolInt(payload.install_hall ?? form.install_hall),
+    install_stairs: asBoolInt(payload.install_stairs ?? form.install_stairs),
+    install_closet: asBoolInt(payload.install_closet ?? form.install_closet),
+    install_basement: asBoolInt(payload.install_basement ?? form.install_basement),
+    install_fam_rm: asBoolInt(payload.install_fam_rm ?? form.install_fam_rm),
+    installation_instructions: payload.installation_instructions || form.installation_instructions || form.install_area_notes || "",
 
-    installation_instructions: mergedLegacy.installation_instructions,
-    notes: payload.notes || "",
-
-    subtotal: totals.subtotal,
+    merchandise_total: totals.merchandise_total,
     sales_tax: totals.sales_tax,
-    total: totals.total,
+    total_sale: totals.total_sale,
+    deposit: totals.deposit,
     balance: totals.balance,
+    payment_cash: asBoolInt(payload.payment_cash ?? form.payment_cash),
+    payment_check: asBoolInt(payload.payment_check ?? form.payment_check),
+    payment_charge: asBoolInt(payload.payment_charge ?? form.payment_charge),
+    payment_financing: asBoolInt(payload.payment_financing ?? form.payment_financing),
+
+    buyer_name: payload.buyer_name || form.buyer_name || form.buyer_signature_name || "",
+    buyer_date: payload.buyer_date || form.buyer_date || form.buyer_signature_date || "",
+    notes: payload.notes || "",
 
     raw_text: payload.raw_text || "",
     source_filename: payload.source_filename || "",
     source_path: payload.source_path || "",
+    ocr_status: payload.ocr_status || "pending",
+    ocr_confidence: Number(payload.ocr_confidence || 0),
 
-    created_at: payload.created_at || nowISO(),
-    updated_at: nowISO()
+    // Legacy mirrors
+    email: payload.customer_email || payload.email || form.customer_email || "",
+    tax_rate: Number(payload.tax_rate || 0),
+    subtotal: totals.subtotal,
+    total: totals.total,
+
+    created_at: payload.created_at || now,
+    updated_at: now
   };
+}
 
-  const isUpdate = !!inv.id;
+function upsertInvoice(payload) {
+  const inv = buildInvoicePayload(payload);
 
-  if (!isUpdate) {
-    const info = db.prepare(`
-      INSERT INTO invoices
-      (invoice_number, sold_to, directions, email, order_date, home_phone, cell_phone,
-       installation_date, installed_by, salesperson, tax_rate, deposit, installation_instructions, notes,
-       subtotal, sales_tax, total, balance, raw_text, source_filename, source_path, created_at, updated_at)
+  const tx = db.transaction((record, rawPayload) => {
+    const isUpdate = !!record.id;
+
+    if (!isUpdate) {
+      const info = db.prepare(`
+        INSERT INTO invoices (
+          invoice_number, sold_to, directions, customer_email, order_date, home_phone, cell_phone,
+          installation_date, installed_by, salesperson,
+          heard_ad, heard_radio, heard_friend, heard_internet, heard_walkin,
+          manufacturer, size, style, color, pad, rug_pad, unit_price, amount,
+          install_lvg_rm, install_din_rm, install_bdrm1, install_bdrm2, install_bdrm3, install_bdrm4,
+          install_hall, install_stairs, install_closet, install_basement, install_fam_rm, installation_instructions,
+          merchandise_total, sales_tax, total_sale, deposit, balance,
+          payment_cash, payment_check, payment_charge, payment_financing,
+          buyer_name, buyer_date, notes,
+          raw_text, source_filename, source_path, ocr_status, ocr_confidence,
+          created_at, updated_at,
+          email, tax_rate, subtotal, total
+        ) VALUES (
+          @invoice_number, @sold_to, @directions, @customer_email, @order_date, @home_phone, @cell_phone,
+          @installation_date, @installed_by, @salesperson,
+          @heard_ad, @heard_radio, @heard_friend, @heard_internet, @heard_walkin,
+          @manufacturer, @size, @style, @color, @pad, @rug_pad, @unit_price, @amount,
+          @install_lvg_rm, @install_din_rm, @install_bdrm1, @install_bdrm2, @install_bdrm3, @install_bdrm4,
+          @install_hall, @install_stairs, @install_closet, @install_basement, @install_fam_rm, @installation_instructions,
+          @merchandise_total, @sales_tax, @total_sale, @deposit, @balance,
+          @payment_cash, @payment_check, @payment_charge, @payment_financing,
+          @buyer_name, @buyer_date, @notes,
+          @raw_text, @source_filename, @source_path, @ocr_status, @ocr_confidence,
+          @created_at, @updated_at,
+          @email, @tax_rate, @subtotal, @total
+        )
+      `).run(record);
+      record.id = info.lastInsertRowid;
+    } else {
+      db.prepare(`
+        UPDATE invoices SET
+          invoice_number=@invoice_number,
+          sold_to=@sold_to,
+          directions=@directions,
+          customer_email=@customer_email,
+          order_date=@order_date,
+          home_phone=@home_phone,
+          cell_phone=@cell_phone,
+          installation_date=@installation_date,
+          installed_by=@installed_by,
+          salesperson=@salesperson,
+          heard_ad=@heard_ad,
+          heard_radio=@heard_radio,
+          heard_friend=@heard_friend,
+          heard_internet=@heard_internet,
+          heard_walkin=@heard_walkin,
+          manufacturer=@manufacturer,
+          size=@size,
+          style=@style,
+          color=@color,
+          pad=@pad,
+          rug_pad=@rug_pad,
+          unit_price=@unit_price,
+          amount=@amount,
+          install_lvg_rm=@install_lvg_rm,
+          install_din_rm=@install_din_rm,
+          install_bdrm1=@install_bdrm1,
+          install_bdrm2=@install_bdrm2,
+          install_bdrm3=@install_bdrm3,
+          install_bdrm4=@install_bdrm4,
+          install_hall=@install_hall,
+          install_stairs=@install_stairs,
+          install_closet=@install_closet,
+          install_basement=@install_basement,
+          install_fam_rm=@install_fam_rm,
+          installation_instructions=@installation_instructions,
+          merchandise_total=@merchandise_total,
+          sales_tax=@sales_tax,
+          total_sale=@total_sale,
+          deposit=@deposit,
+          balance=@balance,
+          payment_cash=@payment_cash,
+          payment_check=@payment_check,
+          payment_charge=@payment_charge,
+          payment_financing=@payment_financing,
+          buyer_name=@buyer_name,
+          buyer_date=@buyer_date,
+          notes=@notes,
+          raw_text=@raw_text,
+          source_filename=@source_filename,
+          source_path=@source_path,
+          ocr_status=@ocr_status,
+          ocr_confidence=@ocr_confidence,
+          updated_at=@updated_at,
+          email=@email,
+          tax_rate=@tax_rate,
+          subtotal=@subtotal,
+          total=@total
+        WHERE id=@id
+      `).run(record);
+    }
+
+    // Legacy-only detail lines; optional for new form-first flow.
+    db.prepare(`DELETE FROM invoice_items WHERE invoice_id=?`).run(record.id);
+
+    const insertItem = db.prepare(`
+      INSERT INTO invoice_items
+      (invoice_id, line_no, description, manufacturer, size, style, color, pad, rug_pad, qty, unit_price, amount)
       VALUES
-      (@invoice_number, @sold_to, @directions, @email, @order_date, @home_phone, @cell_phone,
-       @installation_date, @installed_by, @salesperson, @tax_rate, @deposit, @installation_instructions, @notes,
-       @subtotal, @sales_tax, @total, @balance, @raw_text, @source_filename, @source_path, @created_at, @updated_at)
-    `).run(inv);
-    inv.id = info.lastInsertRowid;
-  } else {
-    db.prepare(`
-      UPDATE invoices SET
-        invoice_number=@invoice_number,
-        sold_to=@sold_to,
-        directions=@directions,
-        email=@email,
-        order_date=@order_date,
-        home_phone=@home_phone,
-        cell_phone=@cell_phone,
-        installation_date=@installation_date,
-        installed_by=@installed_by,
-        salesperson=@salesperson,
-        tax_rate=@tax_rate,
-        deposit=@deposit,
-        installation_instructions=@installation_instructions,
-        notes=@notes,
-        subtotal=@subtotal,
-        sales_tax=@sales_tax,
-        total=@total,
-        balance=@balance,
-        raw_text=@raw_text,
-        source_filename=@source_filename,
-        source_path=@source_path,
-        updated_at=@updated_at
-      WHERE id=@id
-    `).run(inv);
-  }
+      (@invoice_id, @line_no, @description, @manufacturer, @size, @style, @color, @pad, @rug_pad, @qty, @unit_price, @amount)
+    `);
 
-  // Replace items
-  db.prepare(`DELETE FROM invoice_items WHERE invoice_id=?`).run(inv.id);
+    const items = Array.isArray(rawPayload.items) ? rawPayload.items : [];
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i] || {};
+      insertItem.run({
+        invoice_id: record.id,
+        line_no: Number(it.line_no || i + 1),
+        description: String(it.description || "").slice(0, 200),
+        manufacturer: String(it.manufacturer || "").slice(0, 200),
+        size: String(it.size || "").slice(0, 200),
+        style: String(it.style || "").slice(0, 200),
+        color: String(it.color || "").slice(0, 200),
+        pad: String(it.pad || "").slice(0, 200),
+        rug_pad: String(it.rug_pad || "").slice(0, 200),
+        qty: Number(it.qty || 0),
+        unit_price: Number(it.unit_price || 0),
+        amount: Number(it.amount || 0)
+      });
+    }
 
-  const insertItem = db.prepare(`
-    INSERT INTO invoice_items
-    (invoice_id, line_no, description, manufacturer, size, style, color, pad, rug_pad, qty, unit_price, amount)
-    VALUES
-    (@invoice_id, @line_no, @description, @manufacturer, @size, @style, @color, @pad, @rug_pad, @qty, @unit_price, @amount)
-  `);
+    return record.id;
+  });
 
-  const items = Array.isArray(payload.items) ? payload.items : [];
-  for (let i = 0; i < items.length; i++) {
-    const it = items[i] || {};
-    insertItem.run({
-      invoice_id: inv.id,
-      line_no: Number(it.line_no || (i + 1)),
-      description: String(it.description || "").slice(0, 200),
-      manufacturer: String(it.manufacturer || "").slice(0, 200),
-      size: String(it.size || "").slice(0, 200),
-      style: String(it.style || "").slice(0, 200),
-      color: String(it.color || "").slice(0, 200),
-      pad: String(it.pad || "").slice(0, 200),
-      rug_pad: String(it.rug_pad || "").slice(0, 200),
-      qty: Number(it.qty || 0),
-      unit_price: Number(it.unit_price || 0),
-      amount: Number(it.amount || 0)
-    });
-  }
-
-  upsertInvoiceForm(
-    db,
-    inv.id,
-    payload.form,
-    {
-      ...inv,
-      ...totals,
-      items: Array.isArray(payload.items) ? payload.items : []
-    },
-    inv.updated_at
-  );
-
-  return getInvoice(inv.id);
+  const savedId = tx(inv, payload);
+  return getInvoice(savedId);
 }
 
 app.get("/api/invoices", (req, res) => {
   const q = String(req.query.q || "").trim();
   if (!q) {
     const rows = db.prepare(`
-      SELECT id, invoice_number, sold_to, installation_date, total, updated_at
+      SELECT id, invoice_number, sold_to, installation_date, total_sale AS total, updated_at
       FROM invoices
       ORDER BY updated_at DESC
       LIMIT 250
@@ -209,7 +297,7 @@ app.get("/api/invoices", (req, res) => {
 
   const like = `%${q}%`;
   const rows = db.prepare(`
-    SELECT id, invoice_number, sold_to, installation_date, total, updated_at
+    SELECT id, invoice_number, sold_to, installation_date, total_sale AS total, updated_at
     FROM invoices
     WHERE invoice_number LIKE ? OR sold_to LIKE ? OR directions LIKE ? OR home_phone LIKE ? OR cell_phone LIKE ?
     ORDER BY updated_at DESC
@@ -231,6 +319,9 @@ app.post("/api/invoices", (req, res) => {
     res.json(saved);
   } catch (e) {
     console.error(e);
+    if (String(e.message || "").includes("idx_invoices_invoice_number_nonempty_unique")) {
+      return res.status(409).json({ error: "invoice_number must be unique when provided" });
+    }
     res.status(500).json({ error: "Save failed" });
   }
 });
@@ -238,8 +329,11 @@ app.post("/api/invoices", (req, res) => {
 app.delete("/api/invoices/:id", (req, res) => {
   try {
     const id = Number(req.params.id);
-    db.prepare(`DELETE FROM invoice_items WHERE invoice_id=?`).run(id);
-    db.prepare(`DELETE FROM invoices WHERE id=?`).run(id);
+    const tx = db.transaction((rowId) => {
+      db.prepare(`DELETE FROM invoice_items WHERE invoice_id=?`).run(rowId);
+      db.prepare(`DELETE FROM invoices WHERE id=?`).run(rowId);
+    });
+    tx(id);
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
@@ -251,7 +345,7 @@ app.get("/api/installs", (req, res) => {
   const date = String(req.query.date || "").trim();
   if (!date) return res.json([]);
   const rows = db.prepare(`
-    SELECT id, invoice_number, sold_to, directions, home_phone, cell_phone, installation_date, installed_by, installation_instructions, total, balance
+    SELECT id, invoice_number, sold_to, directions, home_phone, cell_phone, installation_date, installed_by, installation_instructions, total_sale AS total, balance
     FROM invoices
     WHERE installation_date = ?
     ORDER BY sold_to ASC
@@ -276,10 +370,8 @@ app.post("/api/upload", upload.single("scan"), async (req, res) => {
       raw_text: raw,
       source_filename: safeName,
       source_path: `/uploads/${safeName}`,
-      tax_rate: 0.0,
-      deposit: 0.0,
-      installation_instructions: "",
-      notes: ""
+      ocr_status: "processed",
+      ocr_confidence: 0
     });
 
     res.json(saved);
@@ -305,13 +397,13 @@ app.get("/api/invoices/:id/pdf", (req, res) => {
   doc.fontSize(10).text(`Invoice: ${inv.invoice_number || ""}`);
   doc.text(`Sold To: ${inv.sold_to || ""}`);
   doc.text(`Directions: ${inv.directions || ""}`);
-  doc.text(`Email: ${inv.email || ""}`);
+  doc.text(`Email: ${inv.customer_email || inv.email || ""}`);
   doc.text(`Home: ${inv.home_phone || ""}  Cell: ${inv.cell_phone || ""}`);
   doc.text(`Order Date: ${inv.order_date || ""}   Install Date: ${inv.installation_date || ""}`);
   doc.text(`Installed By: ${inv.installed_by || ""}   Salesperson: ${inv.salesperson || ""}`);
   doc.moveDown();
 
-  doc.fontSize(12).text("Items");
+  doc.fontSize(12).text("Items (legacy optional)");
   doc.moveDown(0.3);
 
   const cols = { desc: 36, mfg: 210, size: 320, style: 400, amt: 520 };
@@ -342,9 +434,9 @@ app.get("/api/invoices/:id/pdf", (req, res) => {
   doc.moveDown();
 
   doc.fontSize(12).text("Totals");
-  doc.fontSize(10).text(`Subtotal: $${Number(inv.subtotal || 0).toFixed(2)}`);
+  doc.fontSize(10).text(`Merchandise Total: $${Number(inv.merchandise_total || 0).toFixed(2)}`);
   doc.text(`Sales Tax: $${Number(inv.sales_tax || 0).toFixed(2)}`);
-  doc.text(`Total: $${Number(inv.total || 0).toFixed(2)}`);
+  doc.text(`Total Sale: $${Number(inv.total_sale || 0).toFixed(2)}`);
   doc.text(`Deposit: $${Number(inv.deposit || 0).toFixed(2)}`);
   doc.text(`Balance: $${Number(inv.balance || 0).toFixed(2)}`);
 
@@ -377,10 +469,8 @@ watcher.on("add", async (filePath) => {
       raw_text: raw,
       source_filename: safeName,
       source_path: `/uploads/${safeName}`,
-      tax_rate: 0.0,
-      deposit: 0.0,
-      installation_instructions: "",
-      notes: ""
+      ocr_status: "processed",
+      ocr_confidence: 0
     });
 
     console.log(`[WATCHER] processed: ${safeName}`);

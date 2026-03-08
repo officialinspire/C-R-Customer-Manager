@@ -260,7 +260,7 @@ export function extractFromOCR(rawText) {
     /location/i
   ]);
 
-  const email = extractWithFuzzyLabel(text, [
+  const customer_email = extractWithFuzzyLabel(text, [
     /customer\s*email/i,
     /e[\s-]?mail/i,
     /email\s*address/i
@@ -352,7 +352,7 @@ export function extractFromOCR(rawText) {
     header_invoice_number: invoice_number,
     customer_name: sold_to,
     service_address: directions,
-    customer_email: email,
+    customer_email,
     order_date,
     home_phone,
     cell_phone,
@@ -382,7 +382,8 @@ export function extractFromOCR(rawText) {
     invoice_number,
     sold_to,
     directions,
-    email,
+    customer_email,
+    email: customer_email,
     order_date,
     home_phone,
     cell_phone,
