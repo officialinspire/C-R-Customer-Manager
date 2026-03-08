@@ -30,7 +30,17 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.static(PUBLIC_DIR));
 app.use("/uploads", express.static(UPLOADS_DIR));
 
-const upload = multer({ dest: TMP_DIR });
+const MAX_UPLOAD_SIZE_BYTES = 15 * 1024 * 1024;
+const ALLOWED_UPLOAD_MIME_TYPES = new Set(["application/pdf", "image/jpeg", "image/png", "image/tiff"]);
+
+const upload = multer({
+  dest: TMP_DIR,
+  limits: { fileSize: MAX_UPLOAD_SIZE_BYTES },
+  fileFilter: (_req, file, cb) => {
+    if (ALLOWED_UPLOAD_MIME_TYPES.has(String(file.mimetype || "").toLowerCase())) return cb(null, true);
+    return cb(new multer.MulterError("LIMIT_UNEXPECTED_FILE", "scan"));
+  }
+});
 
 function nowISO() {
   return new Date().toISOString();
@@ -44,8 +54,144 @@ function normalizeInvoiceNumber(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
   const digits = raw.replace(/[^0-9]/g, "");
-  if (!digits) return raw.toUpperCase();
   return `CR ${digits.slice(0, 5).padStart(5, "0")}`;
+}
+
+function isValidInvoiceNumber(value) {
+  if (value == null) return true;
+  const raw = String(value).trim();
+  if (!raw) return true;
+  return /^(?:CR\s*)?\d{1,5}$/i.test(raw);
+}
+
+function normalizePhoneNumber(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  let digits = raw.replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("1")) digits = digits.slice(1);
+  if (digits.length === 10) return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  return digits || raw;
+}
+
+function normalizeDate(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  const ymd = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(raw);
+  if (ymd) {
+    const [_, y, m, d] = ymd;
+    return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  }
+
+  const mdy = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/.exec(raw);
+  if (mdy) {
+    let [_, m, d, y] = mdy;
+    if (y.length === 2) y = `20${y}`;
+    return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  }
+
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString().slice(0, 10);
+  }
+
+  return raw;
+}
+
+function normalizeSourcePath(value, sourceFilename = "") {
+  const input = String(value || "").trim();
+  const filename = path.basename(String(sourceFilename || "").trim());
+  if (filename) return `/uploads/${filename}`;
+
+  if (input.startsWith("/uploads/")) {
+    const base = path.basename(input);
+    return base ? `/uploads/${base}` : "";
+  }
+
+  return "";
+}
+
+function resolveUploadPath(sourcePath, sourceFilename) {
+  const safeRelative = normalizeSourcePath(sourcePath, sourceFilename);
+  if (!safeRelative) return null;
+
+  const abs = path.resolve(ROOT, `.${safeRelative}`);
+  const uploadsRoot = path.resolve(UPLOADS_DIR);
+  if (!abs.startsWith(`${uploadsRoot}${path.sep}`) && abs !== uploadsRoot) return null;
+  return abs;
+}
+
+function makeValidationError(details) {
+  const error = new Error("Validation failed");
+  error.status = 400;
+  error.code = "VALIDATION_ERROR";
+  error.details = details;
+  return error;
+}
+
+function validateInvoicePayload(inputPayload, normalizedPayload) {
+  const payload = inputPayload || {};
+  const allowNegative = payload.allow_negative_totals === true;
+  const errors = [];
+
+  if (!String(normalizedPayload.sold_to || "").trim()) {
+    errors.push({ field: "sold_to", code: "REQUIRED", message: "sold_to is required" });
+  }
+  if (!String(normalizedPayload.directions || "").trim()) {
+    errors.push({ field: "directions", code: "REQUIRED", message: "directions is required" });
+  }
+
+  const rawInvoice = payload.invoice_number ?? payload?.form?.header_invoice_number;
+  if (rawInvoice && !isValidInvoiceNumber(rawInvoice)) {
+    errors.push({ field: "invoice_number", code: "INVALID_FORMAT", message: "invoice_number must be CR ##### or #####" });
+  }
+
+  const numericFields = ["unit_price", "amount", "merchandise_total", "sales_tax", "total_sale", "deposit", "balance", "ocr_confidence", "tax_rate"];
+  for (const field of numericFields) {
+    const value = normalizedPayload[field];
+    if (!Number.isFinite(Number(value))) {
+      errors.push({ field, code: "INVALID_NUMBER", message: `${field} must be a valid number` });
+    }
+  }
+
+  const moneyFields = ["merchandise_total", "sales_tax", "total_sale", "deposit"];
+  for (const field of moneyFields) {
+    const value = Number(normalizedPayload[field]);
+    if (value < 0 && !allowNegative) {
+      errors.push({ field, code: "NEGATIVE_NOT_ALLOWED", message: `${field} cannot be negative unless allow_negative_totals=true` });
+    }
+  }
+
+  const paymentFields = ["payment_cash", "payment_check", "payment_charge", "payment_financing"];
+  for (const field of paymentFields) {
+    const value = normalizedPayload[field];
+    if (!(value === 0 || value === 1)) {
+      errors.push({ field, code: "INVALID_PAYMENT_FLAG", message: `${field} must be true/false` });
+    }
+  }
+
+  const items = Array.isArray(payload.items) ? payload.items : [];
+  items.forEach((it, i) => {
+    ["qty", "unit_price", "amount"].forEach((field) => {
+      const n = Number(it?.[field] ?? 0);
+      if (!Number.isFinite(n)) {
+        errors.push({ field: `items[${i}].${field}`, code: "INVALID_NUMBER", message: `${field} must be a valid number` });
+      }
+    });
+  });
+
+  if (errors.length) throw makeValidationError(errors);
+}
+
+function sendApiError(res, error, fallbackMessage) {
+  const status = Number(error?.status) || 500;
+  const code = error?.code || "INTERNAL_ERROR";
+  const details = Array.isArray(error?.details) ? error.details : undefined;
+  return res.status(status).json({
+    error: error?.message || fallbackMessage,
+    code,
+    ...(details ? { details } : {})
+  });
 }
 
 function cleanFilePart(value) {
@@ -102,13 +248,13 @@ function buildInvoicePayload(payload) {
   return {
     id: payload.id || null,
     invoice_number: normalizeInvoiceNumber(payload.invoice_number || form.header_invoice_number || ""),
-    sold_to: payload.sold_to || form.customer_name || "",
-    directions: payload.directions || form.service_address || "",
-    customer_email: payload.customer_email || payload.email || form.customer_email || "",
-    order_date: payload.order_date || form.order_date || "",
-    home_phone: payload.home_phone || form.home_phone || "",
-    cell_phone: payload.cell_phone || form.cell_phone || "",
-    installation_date: payload.installation_date || form.installation_date || "",
+    sold_to: String(payload.sold_to || form.customer_name || "").trim(),
+    directions: String(payload.directions || form.service_address || "").trim(),
+    customer_email: String(payload.customer_email || payload.email || form.customer_email || "").trim(),
+    order_date: normalizeDate(payload.order_date || form.order_date || ""),
+    home_phone: normalizePhoneNumber(payload.home_phone || form.home_phone || ""),
+    cell_phone: normalizePhoneNumber(payload.cell_phone || form.cell_phone || ""),
+    installation_date: normalizeDate(payload.installation_date || form.installation_date || ""),
     installed_by: payload.installed_by || form.installed_by || "",
     salesperson: payload.salesperson || form.salesperson || "",
 
@@ -151,12 +297,12 @@ function buildInvoicePayload(payload) {
     payment_financing: asBoolInt(payload.payment_financing ?? form.payment_financing),
 
     buyer_name: payload.buyer_name || form.buyer_name || form.buyer_signature_name || "",
-    buyer_date: payload.buyer_date || form.buyer_date || form.buyer_signature_date || "",
+    buyer_date: normalizeDate(payload.buyer_date || form.buyer_date || form.buyer_signature_date || ""),
     notes: payload.notes || "",
 
     raw_text: payload.raw_text || "",
-    source_filename: payload.source_filename || "",
-    source_path: payload.source_path || "",
+    source_filename: path.basename(String(payload.source_filename || "").trim()),
+    source_path: normalizeSourcePath(payload.source_path || "", payload.source_filename || ""),
     ocr_status: payload.ocr_status || "pending_review",
     ocr_confidence: Number(payload.ocr_confidence || 0),
 
@@ -173,6 +319,18 @@ function buildInvoicePayload(payload) {
 
 function upsertInvoice(payload) {
   const inv = buildInvoicePayload(payload);
+  validateInvoicePayload(payload, inv);
+
+  const dup = inv.invoice_number
+    ? db.prepare(`SELECT id FROM invoices WHERE invoice_number = ? AND id != ?`).get(inv.invoice_number, Number(inv.id || 0))
+    : null;
+  if (dup) {
+    const error = new Error("invoice_number already exists");
+    error.status = 409;
+    error.code = "DUPLICATE_INVOICE_NUMBER";
+    error.details = [{ field: "invoice_number", code: "DUPLICATE", message: "invoice_number must be unique when provided" }];
+    throw error;
+  }
 
   const tx = db.transaction((record, rawPayload) => {
     const isUpdate = !!record.id;
@@ -321,23 +479,37 @@ app.get("/api/invoices", (req, res) => {
   }
 
   const like = `%${q}%`;
+  const digits = q.replace(/\D/g, "");
+  const phoneLike = digits ? `%${digits}%` : like;
+
   const rows = db.prepare(`
-    SELECT id, invoice_number, sold_to, directions, home_phone, cell_phone, installation_date, total_sale AS total, updated_at
-    FROM invoices
-    WHERE invoice_number LIKE ?
-      OR sold_to LIKE ?
-      OR directions LIKE ?
-      OR home_phone LIKE ?
-      OR cell_phone LIKE ?
-      OR customer_email LIKE ?
-      OR installed_by LIKE ?
-      OR salesperson LIKE ?
-      OR installation_instructions LIKE ?
-      OR notes LIKE ?
-      OR raw_text LIKE ?
-    ORDER BY updated_at DESC
+    SELECT DISTINCT i.id, i.invoice_number, i.sold_to, i.directions, i.home_phone, i.cell_phone, i.installation_date, i.total_sale AS total, i.updated_at
+    FROM invoices i
+    LEFT JOIN invoice_items ii ON ii.invoice_id = i.id
+    WHERE i.invoice_number LIKE @like
+      OR i.sold_to LIKE @like
+      OR i.directions LIKE @like
+      OR i.home_phone LIKE @like
+      OR REPLACE(REPLACE(REPLACE(REPLACE(i.home_phone, '(', ''), ')', ''), '-', ''), ' ', '') LIKE @phoneLike
+      OR i.cell_phone LIKE @like
+      OR REPLACE(REPLACE(REPLACE(REPLACE(i.cell_phone, '(', ''), ')', ''), '-', ''), ' ', '') LIKE @phoneLike
+      OR i.customer_email LIKE @like
+      OR i.installed_by LIKE @like
+      OR i.salesperson LIKE @like
+      OR i.installation_instructions LIKE @like
+      OR i.notes LIKE @like
+      OR i.raw_text LIKE @like
+      OR i.order_date LIKE @like
+      OR i.installation_date LIKE @like
+      OR i.buyer_name LIKE @like
+      OR i.source_filename LIKE @like
+      OR ii.description LIKE @like
+      OR ii.manufacturer LIKE @like
+      OR ii.style LIKE @like
+      OR ii.color LIKE @like
+    ORDER BY i.updated_at DESC
     LIMIT 250
-  `).all(like, like, like, like, like, like, like, like, like, like, like);
+  `).all({ like, phoneLike });
 
   res.json(rows);
 });
@@ -353,11 +525,15 @@ app.post("/api/invoices", (req, res) => {
     const saved = upsertInvoice(req.body || {});
     res.json(saved);
   } catch (e) {
-    console.error(e);
-    if (String(e.message || "").includes("idx_invoices_invoice_number_nonempty_unique")) {
-      return res.status(409).json({ error: "invoice_number must be unique when provided" });
+    console.error("[invoice-save] failed", { error: e?.message, code: e?.code, details: e?.details });
+    if (String(e?.message || "").includes("idx_invoices_invoice_number_nonempty_unique")) {
+      return res.status(409).json({
+        error: "invoice_number must be unique when provided",
+        code: "DUPLICATE_INVOICE_NUMBER",
+        details: [{ field: "invoice_number", code: "DUPLICATE", message: "invoice_number must be unique when provided" }]
+      });
     }
-    res.status(500).json({ error: "Save failed" });
+    return sendApiError(res, e, "Save failed");
   }
 });
 
@@ -367,12 +543,13 @@ app.post("/api/invoices/:id/rescan", async (req, res) => {
     const existing = getInvoice(id);
     if (!existing) return res.status(404).json({ error: "Invoice not found" });
 
-    const sourceCandidate = existing.source_filename
-      ? path.join(UPLOADS_DIR, existing.source_filename)
-      : path.join(ROOT, String(existing.source_path || "").replace(/^\//, ""));
+    const sourceCandidate = resolveUploadPath(existing.source_path, existing.source_filename);
 
     if (!sourceCandidate || !fs.existsSync(sourceCandidate)) {
-      return res.status(400).json({ error: "This invoice has no available source scan to reprocess" });
+      return res.status(400).json({
+        error: "This invoice has no available source scan to reprocess",
+        code: "INVALID_SOURCE_PATH"
+      });
     }
 
     const ocrResult = await ocrImage(sourceCandidate);
@@ -385,24 +562,26 @@ app.post("/api/invoices/:id/rescan", async (req, res) => {
       id,
       raw_text: ocrResult.rawText,
       source_filename: existing.source_filename || path.basename(sourceCandidate),
-      source_path: existing.source_path || `/uploads/${path.basename(sourceCandidate)}`,
+      source_path: normalizeSourcePath(existing.source_path, existing.source_filename || path.basename(sourceCandidate)),
       ocr_status: "pending_review",
       ocr_confidence: Math.round(ocrResult.averageConfidence),
       ocr_fields: ocrResult.fields,
       low_confidence_fields: extracted.low_confidence_fields || ocrResult.lowConfidenceFields
     });
   } catch (e) {
-    console.error(e);
-    if (String(e.message || "").includes("idx_invoices_invoice_number_nonempty_unique")) {
-      return res.status(409).json({ error: "invoice_number must be unique when provided" });
-    }
-    res.status(500).json({ error: "Re-scan failed" });
+    console.error("[invoice-rescan] failed", { error: e?.message, invoiceId: req.params.id });
+    return sendApiError(res, e, "Re-scan failed");
   }
 });
 
 app.delete("/api/invoices/:id", (req, res) => {
   try {
     const id = Number(req.params.id);
+    const existing = getInvoice(id);
+    if (!existing) {
+      return res.status(404).json({ error: "Not found", code: "NOT_FOUND" });
+    }
+
     const tx = db.transaction((rowId) => {
       db.prepare(`DELETE FROM invoice_items WHERE invoice_id=?`).run(rowId);
       db.prepare(`DELETE FROM invoices WHERE id=?`).run(rowId);
@@ -410,8 +589,8 @@ app.delete("/api/invoices/:id", (req, res) => {
     tx(id);
     res.json({ ok: true });
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: "Delete failed" });
+    console.error("[invoice-delete] failed", { error: e?.message, invoiceId: req.params.id });
+    return sendApiError(res, e, "Delete failed");
   }
 });
 
@@ -427,48 +606,76 @@ app.get("/api/installs", (req, res) => {
   res.json(rows);
 });
 
-app.post("/api/upload", upload.single("scan"), async (req, res) => {
-  try {
-    const f = req.file;
-    if (!f) return res.status(400).json({ error: "No file" });
-
-    const safeName = `${Date.now()}_${(f.originalname || "scan").replace(/[^\w.\- ]+/g, "_")}`;
-    const dest = path.join(UPLOADS_DIR, safeName);
-    fs.renameSync(f.path, dest);
-
-    try {
-      const ocrResult = await ocrImage(dest);
-      const extracted = extractFromOCR(ocrResult.rawText, ocrResult);
-
-      // Review-first import: do not write to DB yet.
-      res.json({
-        ...extracted,
-        id: null,
-        raw_text: ocrResult.rawText,
-        source_filename: safeName,
-        source_path: `/uploads/${safeName}`,
-        ocr_status: "pending_review",
-        ocr_confidence: Math.round(ocrResult.averageConfidence),
-        ocr_fields: ocrResult.fields,
-        low_confidence_fields: extracted.low_confidence_fields || ocrResult.lowConfidenceFields
+app.post("/api/upload", (req, res) => {
+  upload.single("scan")(req, res, async (uploadError) => {
+    if (uploadError) {
+      console.error("[upload] validation failed", {
+        error: uploadError?.message,
+        code: uploadError?.code,
+        mimeType: req?.file?.mimetype,
+        fileName: req?.file?.originalname
       });
-    } catch (ocrError) {
-      console.error(ocrError);
-      res.status(422).json({
-        error: "OCR failed",
-        id: null,
-        source_filename: safeName,
-        source_path: `/uploads/${safeName}`,
-        raw_text: "",
-        ocr_status: "failed",
-        ocr_confidence: 0,
-        low_confidence_fields: []
+
+      if (uploadError instanceof multer.MulterError && uploadError.code === "LIMIT_FILE_SIZE") {
+        return res.status(413).json({
+          error: `File exceeds ${Math.round(MAX_UPLOAD_SIZE_BYTES / (1024 * 1024))}MB size limit`,
+          code: "UPLOAD_TOO_LARGE"
+        });
+      }
+
+      return res.status(400).json({
+        error: "Unsupported upload type. Allowed: PDF, JPEG, PNG, TIFF",
+        code: "INVALID_UPLOAD_TYPE"
       });
     }
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: "Upload/OCR failed" });
-  }
+
+    try {
+      const f = req.file;
+      if (!f) return res.status(400).json({ error: "No file", code: "NO_FILE" });
+
+      const safeName = `${Date.now()}_${(f.originalname || "scan").replace(/[^\w.\- ]+/g, "_")}`;
+      const dest = path.join(UPLOADS_DIR, safeName);
+      fs.renameSync(f.path, dest);
+
+      try {
+        const ocrResult = await ocrImage(dest);
+        const extracted = extractFromOCR(ocrResult.rawText, ocrResult);
+
+        // Review-first import: do not write to DB yet.
+        return res.json({
+          ...extracted,
+          id: null,
+          raw_text: ocrResult.rawText,
+          source_filename: safeName,
+          source_path: normalizeSourcePath(`/uploads/${safeName}`, safeName),
+          ocr_status: "pending_review",
+          ocr_confidence: Math.round(ocrResult.averageConfidence),
+          ocr_fields: ocrResult.fields,
+          low_confidence_fields: extracted.low_confidence_fields || ocrResult.lowConfidenceFields
+        });
+      } catch (ocrError) {
+        console.error("[upload-ocr] failed", {
+          error: ocrError?.message,
+          source_filename: safeName,
+          source_path: `/uploads/${safeName}`
+        });
+        return res.status(422).json({
+          error: "OCR failed",
+          code: "OCR_FAILED",
+          id: null,
+          source_filename: safeName,
+          source_path: `/uploads/${safeName}`,
+          raw_text: "",
+          ocr_status: "failed",
+          ocr_confidence: 0,
+          low_confidence_fields: []
+        });
+      }
+    } catch (e) {
+      console.error("[upload] failed", { error: e?.message, stack: e?.stack });
+      return sendApiError(res, e, "Upload/OCR failed");
+    }
+  });
 });
 
 app.get("/api/invoices/:id/pdf", (req, res) => {

@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import Database from "better-sqlite3";
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 const REQUIRED_INVOICE_COLUMNS = {
   invoice_number: "TEXT",
@@ -171,8 +171,64 @@ export function openDb(dbPath) {
   `);
 
   migrateSchema(db);
+  runMigrations(db);
   ensureIndexes(db);
   return db;
+}
+
+function runMigrations(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      id TEXT PRIMARY KEY,
+      applied_at TEXT NOT NULL
+    );
+  `);
+
+  const migrationSteps = [
+    {
+      id: "2026-01-source-path-and-dates-normalization",
+      run() {
+        db.exec(`
+          UPDATE invoices
+          SET
+            source_path = CASE
+              WHEN source_path IS NULL THEN ''
+              WHEN source_path LIKE '/uploads/%' THEN source_path
+              WHEN source_filename IS NOT NULL AND TRIM(source_filename) <> '' THEN '/uploads/' || source_filename
+              ELSE ''
+            END,
+            order_date = CASE
+              WHEN order_date IS NULL THEN ''
+              WHEN order_date GLOB '____-__-__*' THEN SUBSTR(order_date, 1, 10)
+              ELSE order_date
+            END,
+            installation_date = CASE
+              WHEN installation_date IS NULL THEN ''
+              WHEN installation_date GLOB '____-__-__*' THEN SUBSTR(installation_date, 1, 10)
+              ELSE installation_date
+            END,
+            buyer_date = CASE
+              WHEN buyer_date IS NULL THEN ''
+              WHEN buyer_date GLOB '____-__-__*' THEN SUBSTR(buyer_date, 1, 10)
+              ELSE buyer_date
+            END
+        `);
+      }
+    }
+  ];
+
+  const hasMigration = db.prepare(`SELECT id FROM schema_migrations WHERE id=?`);
+  const insertMigration = db.prepare(`INSERT INTO schema_migrations (id, applied_at) VALUES (?, datetime('now'))`);
+
+  const tx = db.transaction(() => {
+    for (const step of migrationSteps) {
+      if (hasMigration.get(step.id)) continue;
+      step.run();
+      insertMigration.run(step.id);
+    }
+  });
+
+  tx();
 }
 
 function migrateSchema(db) {
