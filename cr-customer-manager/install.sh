@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+NODE_MAJOR=$(node -e "process.exit(parseInt(process.version.slice(1)))" 2>/dev/null; echo $?)
+if [ "$(node -e 'process.exit(parseInt(process.version.slice(1).split(".")[0]))')" -lt 18 ] 2>/dev/null; then
+  echo "ERROR: Node.js 18+ is required. Found: $(node --version 2>/dev/null || echo 'not installed')"
+  exit 1
+fi
 set -e
 
 echo "[1/5] Installing OS deps..."
