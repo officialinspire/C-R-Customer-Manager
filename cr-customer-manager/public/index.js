@@ -19,8 +19,10 @@ const DEFAULT_FORM = {
   raw_text: "",
   source_path: "",
   source_filename: "",
-  ocr_status: "pending",
+  ocr_status: "pending_review",
   ocr_confidence: 0,
+  field_confidence: {},
+  low_confidence_fields: [],
   heard_ad: 0,
   heard_radio: 0,
   heard_friend: 0,
@@ -55,6 +57,10 @@ const DEFAULT_FORM = {
   form: null
 };
 
+const REVIEW_FIELDS = [
+  "invoice_number", "sold_to", "directions", "email", "order_date", "home_phone", "cell_phone", "installation_date", "installed_by", "salesperson"
+];
+
 let current = null;
 let statusTimer = null;
 let dirty = false;
@@ -63,7 +69,6 @@ async function api(path, opts = {}) {
   const res = await fetch(path, opts);
   const ct = res.headers.get("content-type") || "";
   const body = ct.includes("application/json") ? await res.json().catch(() => null) : await res.text().catch(() => "");
-
   if (!res.ok) {
     const message = typeof body === "string" ? body : body?.error || res.statusText;
     const err = new Error(`${res.status} ${message}`.trim().slice(0, 500));
@@ -71,7 +76,6 @@ async function api(path, opts = {}) {
     err.body = body;
     throw err;
   }
-
   return body;
 }
 
@@ -93,7 +97,6 @@ function setStatus(type, text, persist = false) {
   clearTimeout(statusTimer);
   statusEl.textContent = text;
   statusEl.className = `pill status-${type}`;
-
   if (!persist) {
     statusTimer = setTimeout(() => {
       const base = current?.id ? (dirty ? "unsaved changes" : "loaded") : "new";
@@ -141,15 +144,12 @@ function clearErrors() {
 function validateForm() {
   clearErrors();
   const errors = {};
-
   const soldTo = $("sold_to").value.trim();
   if (!soldTo) errors.sold_to = "Customer name is required.";
 
   const invRaw = $("invoice_number").value;
   const normalized = normalizeInvoiceNumber(invRaw);
-  if (invRaw.trim() && !/^CR\s\d{5}$/.test(normalized)) {
-    errors.invoice_number = "Invoice number should be in CR ##### format.";
-  }
+  if (invRaw.trim() && !/^CR\s\d{5}$/.test(normalized)) errors.invoice_number = "Invoice number should be in CR ##### format.";
 
   const deposit = Number($("deposit").value || 0);
   const total = Number($("total").value || 0);
@@ -158,9 +158,8 @@ function validateForm() {
 
   if (!current?.items?.length) {
     errors.itemsBody = "At least one item is required.";
-  } else {
-    const hasValidItem = current.items.some((item) => item.description || Number(item.amount) > 0 || Number(item.qty) > 0);
-    if (!hasValidItem) errors.itemsBody = "Add an item description or amount before saving.";
+  } else if (!current.items.some((item) => item.description || Number(item.amount) > 0 || Number(item.qty) > 0)) {
+    errors.itemsBody = "Add an item description or amount before saving.";
   }
 
   Object.entries(errors).forEach(([field, message]) => setFieldError(field, message));
@@ -174,13 +173,10 @@ function recompute(mark = false) {
   current.items = rows.map((tr, idx) => {
     const get = (name) => tr.querySelector(`[data-k="${name}"]`).value;
     const getNum = (name) => Number(get(name) || 0);
-
     const qty = getNum("qty");
     const unit = getNum("unit_price");
     const amount = Math.round(qty * unit * 100) / 100;
-
     tr.querySelector(`[data-k="amount"]`).value = money(amount);
-
     return {
       line_no: idx + 1,
       description: get("description").trim(),
@@ -269,6 +265,7 @@ function readForm() {
     raw_text: $("raw_text").value,
     source_path: $("source_path").value,
     items: current?.items || [],
+    ocr_status: "reviewed",
     form: {
       ...form,
       form_version: "paper-v1",
@@ -292,6 +289,39 @@ function readForm() {
   };
 }
 
+function applyReviewHighlights() {
+  document.querySelectorAll(".review-flag").forEach((el) => el.classList.remove("review-flag"));
+  const low = new Set(current?.low_confidence_fields || []);
+  const map = {
+    customer_email: "email",
+    amount: "total"
+  };
+  REVIEW_FIELDS.forEach((key) => {
+    const input = $(map[key] || key);
+    if (!input) return;
+    const isLow = low.has(key);
+    const empty = !String(input.value || "").trim();
+    if (isLow || empty) input.classList.add("review-flag");
+  });
+}
+
+function fillReviewPanel(inv) {
+  const low = inv.low_confidence_fields || [];
+  $("reviewStatus").textContent = `${inv.ocr_status || "pending_review"} • OCR ${Math.round(inv.ocr_confidence || 0)}%`;
+  $("reviewSource").textContent = inv.source_filename || "(scan)";
+  $("reviewImage").src = inv.source_path || "";
+  $("reviewImage").classList.toggle("hidden", !inv.source_path);
+
+  const rows = REVIEW_FIELDS.map((field) => {
+    const value = inv[field] || "";
+    const conf = inv.field_confidence?.[field === "email" ? "customer_email" : field];
+    const lowFlag = low.includes(field === "email" ? "customer_email" : field) || !String(value).trim();
+    return `<tr class="${lowFlag ? "low" : ""}"><td>${escapeHtml(field)}</td><td>${escapeHtml(String(value))}</td><td>${conf ?? "—"}</td></tr>`;
+  }).join("");
+  $("reviewTableBody").innerHTML = rows;
+  $("reviewPanel").classList.toggle("hidden", false);
+}
+
 function fillForm(inv) {
   current = { ...DEFAULT_FORM, ...inv, items: inv.items?.length ? inv.items : DEFAULT_FORM.items.slice() };
   current.form = inv.form || null;
@@ -310,10 +340,8 @@ function fillForm(inv) {
 
   $("tax_rate").value = current.tax_rate ?? 0;
   $("deposit").value = current.deposit ?? 0;
-
   $("installation_instructions").value = current.installation_instructions || "";
   $("notes").value = current.notes || "";
-
   $("source_path").value = current.source_path || "";
   $("raw_text").value = current.raw_text || "";
 
@@ -323,6 +351,10 @@ function fillForm(inv) {
 
   clearErrors();
   recompute(false);
+  applyReviewHighlights();
+  if (current.ocr_status === "pending_review") fillReviewPanel(current);
+  else $("reviewPanel").classList.add("hidden");
+
   setStatus("ok", current.id ? "loaded" : "new", true);
 }
 
@@ -337,10 +369,7 @@ async function refreshList(q = "") {
       <div class="t">${escapeHtml(r.invoice_number || "(no invoice #)")} — ${escapeHtml(r.sold_to || "")}</div>
       <div class="m">${escapeHtml(r.installation_date || "")} • ${escapeHtml(r.home_phone || r.cell_phone || "")} • ${escapeHtml(r.directions || "")} • $${money(r.total || 0)}</div>
     `;
-    el.addEventListener("click", async () => {
-      const inv = await api(`/api/invoices/${r.id}`);
-      fillForm(inv);
-    });
+    el.addEventListener("click", async () => fillForm(await api(`/api/invoices/${r.id}`)));
     wrap.appendChild(el);
   });
 }
@@ -356,32 +385,25 @@ async function checkHealth() {
 
 async function save() {
   recompute(false);
-  if (!validateForm()) {
-    setStatus("bad", "fix validation errors", true);
-    return;
-  }
+  if (!validateForm()) return setStatus("bad", "fix validation errors", true);
 
   const btnSave = $("btnSave");
-
   try {
     setStatus("warn", "saving...", true);
     btnSave.disabled = true;
-
-    const payload = readForm();
     const saved = await api("/api/invoices", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(readForm())
     });
-
     await refreshList($("q").value.trim());
     fillForm(saved);
+    $("reviewPanel").classList.add("hidden");
     setStatus("ok", "saved", false);
   } catch (e) {
     if (e.status === 409) {
       setFieldError("invoice_number", "That invoice number already exists. Use another number.");
-      setStatus("bad", "duplicate invoice #", true);
-      return;
+      return setStatus("bad", "duplicate invoice #", true);
     }
     setStatus("bad", "save failed", true);
     throw e;
@@ -393,20 +415,14 @@ async function save() {
 async function del() {
   if (!current?.id) return;
   if (!confirm("Delete this invoice? This action cannot be undone.")) return;
-
   const btnDelete = $("btnDelete");
-
   try {
     setStatus("bad", "deleting...", true);
     btnDelete.disabled = true;
-
     await api(`/api/invoices/${current.id}`, { method: "DELETE" });
     newInvoice();
     await refreshList($("q").value.trim());
     setStatus("ok", "deleted", false);
-  } catch (e) {
-    setStatus("bad", "delete failed", true);
-    throw e;
   } finally {
     btnDelete.disabled = false;
   }
@@ -414,56 +430,38 @@ async function del() {
 
 function newInvoice() {
   fillForm({ ...DEFAULT_FORM, id: null, form: null, items: DEFAULT_FORM.items.map((it) => ({ ...it })) });
+  $("reviewPanel").classList.add("hidden");
   setStatus("ok", "new", true);
 }
 
 function openPdf() {
-  if (!current?.id) return;
-  window.open(`/api/invoices/${current.id}/pdf`, "_blank");
+  if (current?.id) window.open(`/api/invoices/${current.id}/pdf`, "_blank");
 }
 
 function openScan() {
   const p = $("source_path").value.trim();
-  if (!p) return;
-  window.open(p, "_blank");
+  if (p) window.open(p, "_blank");
 }
 
 async function rescanCurrentInvoice() {
-  if (!current?.id) {
-    setStatus("bad", "save invoice before re-scan", false);
-    return;
-  }
-
-  try {
-    setStatus("warn", "re-scanning...", true);
-    const scanned = await api(`/api/invoices/${current.id}/rescan`, { method: "POST" });
-    fillForm(scanned);
-    await refreshList($("q").value.trim());
-    setStatus("ok", "scan reprocessed", false);
-  } catch (e) {
-    if (e.status === 400 || e.status === 404) {
-      setStatus("bad", e.body?.error || "scan source missing", true);
-      return;
-    }
-    setStatus("bad", "re-scan failed", true);
-    throw e;
-  }
+  if (!current?.id) return setStatus("bad", "save invoice before re-scan", false);
+  setStatus("warn", "re-scanning...", true);
+  const scanned = await api(`/api/invoices/${current.id}/rescan`, { method: "POST" });
+  fillForm(scanned);
+  setStatus("ok", "review OCR draft", true);
 }
 
 async function uploadScan(file) {
   try {
-    setStatus("warn", "processing scan...", true);
-
+    setStatus("warn", "processing scan for review...", true);
     const fd = new FormData();
     fd.append("scan", file);
-    const saved = await api("/api/upload", { method: "POST", body: fd });
-    await refreshList($("q").value.trim());
-    fillForm(saved);
-    setStatus("ok", "scan processed", false);
+    const draft = await api("/api/upload", { method: "POST", body: fd });
+    fillForm(draft);
+    setStatus("warn", "review OCR fields before saving", true);
   } catch (e) {
-    if (e.status === 409) {
-      setStatus("bad", "scan created duplicate invoice #", true);
-      setFieldError("invoice_number", "A record with this OCR invoice number already exists.");
+    if (e.status === 422) {
+      setStatus("bad", "OCR failed; scan saved for retry", true);
       return;
     }
     setStatus("bad", "scan upload failed", true);
@@ -493,11 +491,15 @@ async function init() {
   });
 
   ["invoice_number", "sold_to", "directions", "email", "order_date", "home_phone", "cell_phone", "installation_date", "installed_by", "salesperson", "installation_instructions", "notes", "tax_rate", "deposit"]
-    .forEach((id) => $(id).addEventListener("input", () => recompute(true)));
+    .forEach((id) => $(id).addEventListener("input", () => {
+      recompute(true);
+      applyReviewHighlights();
+    }));
 
   $("invoice_number").addEventListener("blur", () => {
     $("invoice_number").value = normalizeInvoiceNumber($("invoice_number").value);
     recompute(true);
+    applyReviewHighlights();
   });
 
   $("fileScan").addEventListener("change", (e) => {

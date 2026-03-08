@@ -6,7 +6,7 @@ import multer from "multer";
 import PDFDocument from "pdfkit";
 
 import { openDb, computeTotals } from "./db.js";
-import { ocrImageToText } from "./ocr.js";
+import { ocrImage } from "./ocr.js";
 import { extractFromOCR } from "./parse.js";
 
 const PORT = process.env.PORT || 3005;
@@ -140,7 +140,7 @@ function buildInvoicePayload(payload) {
     raw_text: payload.raw_text || "",
     source_filename: payload.source_filename || "",
     source_path: payload.source_path || "",
-    ocr_status: payload.ocr_status || "pending",
+    ocr_status: payload.ocr_status || "pending_review",
     ocr_confidence: Number(payload.ocr_confidence || 0),
 
     // Legacy mirrors
@@ -358,20 +358,22 @@ app.post("/api/invoices/:id/rescan", async (req, res) => {
       return res.status(400).json({ error: "This invoice has no available source scan to reprocess" });
     }
 
-    const raw = await ocrImageToText(sourceCandidate);
-    const extracted = extractFromOCR(raw);
-    const saved = upsertInvoice({
+    const ocrResult = await ocrImage(sourceCandidate);
+    const extracted = extractFromOCR(ocrResult.rawText, ocrResult);
+
+    // Review-first: return a draft preview only; caller must explicitly save.
+    res.json({
       ...existing,
       ...extracted,
       id,
-      raw_text: raw,
+      raw_text: ocrResult.rawText,
       source_filename: existing.source_filename || path.basename(sourceCandidate),
       source_path: existing.source_path || `/uploads/${path.basename(sourceCandidate)}`,
-      ocr_status: "processed",
-      ocr_confidence: Number(existing.ocr_confidence || 0)
+      ocr_status: "pending_review",
+      ocr_confidence: Math.round(ocrResult.averageConfidence),
+      ocr_fields: ocrResult.fields,
+      low_confidence_fields: extracted.low_confidence_fields || ocrResult.lowConfidenceFields
     });
-
-    res.json(saved);
   } catch (e) {
     console.error(e);
     if (String(e.message || "").includes("idx_invoices_invoice_number_nonempty_unique")) {
@@ -417,19 +419,35 @@ app.post("/api/upload", upload.single("scan"), async (req, res) => {
     const dest = path.join(UPLOADS_DIR, safeName);
     fs.renameSync(f.path, dest);
 
-    const raw = await ocrImageToText(dest);
-    const extracted = extractFromOCR(raw);
+    try {
+      const ocrResult = await ocrImage(dest);
+      const extracted = extractFromOCR(ocrResult.rawText, ocrResult);
 
-    const saved = upsertInvoice({
-      ...extracted,
-      raw_text: raw,
-      source_filename: safeName,
-      source_path: `/uploads/${safeName}`,
-      ocr_status: "processed",
-      ocr_confidence: 0
-    });
-
-    res.json(saved);
+      // Review-first import: do not write to DB yet.
+      res.json({
+        ...extracted,
+        id: null,
+        raw_text: ocrResult.rawText,
+        source_filename: safeName,
+        source_path: `/uploads/${safeName}`,
+        ocr_status: "pending_review",
+        ocr_confidence: Math.round(ocrResult.averageConfidence),
+        ocr_fields: ocrResult.fields,
+        low_confidence_fields: extracted.low_confidence_fields || ocrResult.lowConfidenceFields
+      });
+    } catch (ocrError) {
+      console.error(ocrError);
+      res.status(422).json({
+        error: "OCR failed",
+        id: null,
+        source_filename: safeName,
+        source_path: `/uploads/${safeName}`,
+        raw_text: "",
+        ocr_status: "failed",
+        ocr_confidence: 0,
+        low_confidence_fields: []
+      });
+    }
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Upload/OCR failed" });
@@ -516,19 +534,8 @@ watcher.on("add", async (filePath) => {
     fs.copyFileSync(filePath, dest);
     fs.unlinkSync(filePath);
 
-    const raw = await ocrImageToText(dest);
-    const extracted = extractFromOCR(raw);
-
-    upsertInvoice({
-      ...extracted,
-      raw_text: raw,
-      source_filename: safeName,
-      source_path: `/uploads/${safeName}`,
-      ocr_status: "processed",
-      ocr_confidence: 0
-    });
-
-    console.log(`[WATCHER] processed: ${safeName}`);
+    // Review-first: inbox watcher only archives scans to uploads.
+    console.log(`[WATCHER] queued for review: ${safeName}`);
   } catch (e) {
     console.error("[WATCHER] failed:", e);
   }

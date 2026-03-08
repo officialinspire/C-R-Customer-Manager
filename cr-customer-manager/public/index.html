@@ -34,7 +34,7 @@
     <aside class="side">
       <h2>🔍 Search Invoices</h2>
       <input id="q" class="input" placeholder="Search by invoice #, customer, phones, address, installer, notes, or OCR text..." />
-      <div class="hint">💡 Tip: Upload a scan or drop images into <code>/inbox</code> folder to automatically create invoices.</div>
+      <div class="hint">💡 Tip: Upload a scan to OCR, review flagged fields, then save. Files dropped in <code>/inbox</code> are archived for manual review.</div>
       <div id="results" class="results"></div>
     </aside>
 
@@ -95,6 +95,25 @@
         </div>
 
         <hr class="sep" />
+
+        <section id="reviewPanel" class="review-panel hidden">
+          <div class="rowhead">
+            <h2>🧾 OCR Review Draft</h2>
+            <div class="muted" id="reviewStatus">pending_review</div>
+          </div>
+          <div class="review-grid">
+            <div>
+              <div class="muted">Source scan: <span id="reviewSource">—</span></div>
+              <img id="reviewImage" class="review-image hidden" alt="Uploaded scan preview" />
+            </div>
+            <div>
+              <table class="review-table">
+                <thead><tr><th>Field</th><th>Extracted</th><th>Confidence</th></tr></thead>
+                <tbody id="reviewTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
 
         <div class="rowhead">
           <h2>🛒 Items & Products</h2>
