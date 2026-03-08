@@ -5,7 +5,7 @@ import chokidar from "chokidar";
 import multer from "multer";
 import PDFDocument from "pdfkit";
 
-import { openDb, computeTotals } from "./db.js";
+import { openDb, computeTotals, getInvoiceForm, upsertInvoiceForm } from "./db.js";
 import { ocrImageToText } from "./ocr.js";
 import { extractFromOCR } from "./parse.js";
 
@@ -46,29 +46,53 @@ function getInvoice(id) {
   const items = db
     .prepare(`SELECT * FROM invoice_items WHERE invoice_id=? ORDER BY line_no ASC, id ASC`)
     .all(id);
-  return { ...inv, items };
+  const form = getInvoiceForm(db, id);
+  return { ...inv, items, form };
+}
+
+function buildLegacyPayloadFromForm(payload) {
+  const form = payload?.form || {};
+
+  // Migration bridge: the UI currently posts legacy invoice fields.
+  // New form-first clients can post payload.form and still be persisted
+  // to both legacy columns and normalized tables during transition.
+  return {
+    invoice_number: payload.invoice_number || form.header_invoice_number || "",
+    sold_to: payload.sold_to || form.customer_name || "",
+    directions: payload.directions || form.service_address || "",
+    email: payload.email || form.customer_email || "",
+    order_date: payload.order_date || form.order_date || "",
+    home_phone: payload.home_phone || form.home_phone || "",
+    cell_phone: payload.cell_phone || form.cell_phone || "",
+    installation_date: payload.installation_date || form.installation_date || "",
+    installed_by: payload.installed_by || form.installed_by || "",
+    salesperson: payload.salesperson || form.salesperson || "",
+    deposit: payload.deposit ?? form.deposit ?? 0,
+    installation_instructions: payload.installation_instructions || form.install_area_notes || ""
+  };
 }
 
 function upsertInvoice(payload) {
+  const mergedLegacy = buildLegacyPayloadFromForm(payload);
   const totals = computeTotals(payload);
 
   const inv = {
     id: payload.id || null,
-    invoice_number: payload.invoice_number || "",
-    sold_to: payload.sold_to || "",
-    directions: payload.directions || "",
-    email: payload.email || "",
-    order_date: payload.order_date || "",
-    home_phone: payload.home_phone || "",
-    cell_phone: payload.cell_phone || "",
-    installation_date: payload.installation_date || "",
-    installed_by: payload.installed_by || "",
-    salesperson: payload.salesperson || "",
+    invoice_number: mergedLegacy.invoice_number,
+    sold_to: mergedLegacy.sold_to,
+    directions: mergedLegacy.directions,
+    email: mergedLegacy.email,
+    order_date: mergedLegacy.order_date,
+    home_phone: mergedLegacy.home_phone,
+    cell_phone: mergedLegacy.cell_phone,
+    installation_date: mergedLegacy.installation_date,
+    installed_by: mergedLegacy.installed_by,
+    salesperson: mergedLegacy.salesperson,
 
     tax_rate: Number(payload.tax_rate || 0),
-    deposit: Number(payload.deposit || 0),
+    deposit: Number(mergedLegacy.deposit || 0),
 
-    installation_instructions: payload.installation_instructions || "",
+    installation_instructions: mergedLegacy.installation_instructions,
     notes: payload.notes || "",
 
     subtotal: totals.subtotal,
@@ -155,6 +179,18 @@ function upsertInvoice(payload) {
       amount: Number(it.amount || 0)
     });
   }
+
+  upsertInvoiceForm(
+    db,
+    inv.id,
+    payload.form,
+    {
+      ...inv,
+      ...totals,
+      items: Array.isArray(payload.items) ? payload.items : []
+    },
+    inv.updated_at
+  );
 
   return getInvoice(inv.id);
 }

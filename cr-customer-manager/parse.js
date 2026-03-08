@@ -347,6 +347,37 @@ export function extractFromOCR(rawText) {
     console.warn(`⚠️  Missing critical fields: ${missingCritical.join(", ")}`);
   }
 
+  const form = {
+    form_version: "paper-v1",
+    header_invoice_number: invoice_number,
+    customer_name: sold_to,
+    service_address: directions,
+    customer_email: email,
+    order_date,
+    home_phone,
+    cell_phone,
+    installation_date,
+    installed_by,
+    salesperson,
+    manufacturer,
+    size,
+    style,
+    color,
+    pad,
+    rug_pad,
+    install_area_notes: "",
+    merchandise_total: toMoneyNum(amount),
+    sales_tax: 0,
+    total_sale: toMoneyNum(amount),
+    deposit: 0,
+    balance: toMoneyNum(amount),
+    payment_method: "",
+    hear_about: [],
+    install_areas: [],
+    buyer_signature_name: "",
+    buyer_signature_date: ""
+  };
+
   return {
     invoice_number,
     sold_to,
@@ -358,6 +389,7 @@ export function extractFromOCR(rawText) {
     installation_date,
     installed_by,
     salesperson,
-    items: [defaultItem]
+    items: [defaultItem],
+    form
   };
 }

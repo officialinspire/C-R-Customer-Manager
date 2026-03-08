@@ -94,6 +94,7 @@ function escapeHtml(s) {
 }
 
 function readForm() {
+  const form = current?.form || {};
   return {
     id: current?.id || null,
     invoice_number: $("invoice_number").value.trim(),
@@ -116,12 +117,36 @@ function readForm() {
     raw_text: $("raw_text").value,
     source_path: $("source_path").value,
 
-    items: current?.items || []
+    items: current?.items || [],
+
+    // Foundation for form-first architecture:
+    // persist normalized paper-form payload in parallel with legacy fields.
+    form: {
+      ...form,
+      form_version: "paper-v1",
+      header_invoice_number: $("invoice_number").value.trim(),
+      customer_name: $("sold_to").value.trim(),
+      service_address: $("directions").value.trim(),
+      customer_email: $("email").value.trim(),
+      order_date: $("order_date").value,
+      home_phone: $("home_phone").value.trim(),
+      cell_phone: $("cell_phone").value.trim(),
+      installation_date: $("installation_date").value,
+      installed_by: $("installed_by").value.trim(),
+      salesperson: $("salesperson").value.trim(),
+      install_area_notes: $("installation_instructions").value,
+      merchandise_total: Number($("subtotal").value || 0),
+      sales_tax: Number($("sales_tax").value || 0),
+      total_sale: Number($("total").value || 0),
+      deposit: Number($("deposit").value || 0),
+      balance: Number($("balance").value || 0)
+    }
   };
 }
 
 function fillForm(inv) {
   current = inv;
+  current.form = inv.form || null;
 
   $("invoice_number").value = inv.invoice_number || "";
   $("sold_to").value = inv.sold_to || "";
@@ -291,7 +316,8 @@ function newInvoice() {
     notes: "",
     raw_text: "",
     source_path: "",
-    items: [{ description: "Carpet / Rug", qty: 1, unit_price: 0, amount: 0 }]
+    items: [{ description: "Carpet / Rug", qty: 1, unit_price: 0, amount: 0 }],
+    form: null
   });
 
   const statusEl = $("status");
