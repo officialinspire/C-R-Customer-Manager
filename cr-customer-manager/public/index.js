@@ -61,6 +61,22 @@ const REVIEW_FIELDS = [
   "invoice_number", "sold_to", "directions", "email", "order_date", "home_phone", "cell_phone", "installation_date", "installed_by", "salesperson"
 ];
 
+const INSTALL_ROOM_FIELDS = [
+  ["install_lvg_rm", "Living room"],
+  ["install_din_rm", "Dining room"],
+  ["install_bdrm1", "Bedroom 1"],
+  ["install_bdrm2", "Bedroom 2"],
+  ["install_bdrm3", "Bedroom 3"],
+  ["install_bdrm4", "Bedroom 4"],
+  ["install_hall", "Hall"],
+  ["install_stairs", "Stairs"],
+  ["install_closet", "Closet"],
+  ["install_basement", "Basement"],
+  ["install_fam_rm", "Family room"]
+];
+
+let installerMode = false;
+
 let current = null;
 let statusTimer = null;
 let dirty = false;
@@ -110,13 +126,81 @@ function markDirty() {
   setStatus("warn", current?.id ? "unsaved changes" : "new", true);
 }
 
+function summarizeMaterials(items = []) {
+  const rows = items
+    .filter((it) => String(it?.description || "").trim() || Number(it?.amount) > 0 || Number(it?.qty) > 0)
+    .map((it) => {
+      const description = String(it.description || "Material").trim() || "Material";
+      const qty = Number(it.qty || 0);
+      const detail = [it.color, it.style, it.size].map((v) => String(v || "").trim()).filter(Boolean).join(" • ");
+      const qtyText = qty > 0 ? `${qty}x ` : "";
+      return `${qtyText}${description}${detail ? ` (${detail})` : ""}`;
+    });
+  return rows.length ? rows.join("; ") : "—";
+}
+
+function summarizeRooms(formData = {}) {
+  const selected = INSTALL_ROOM_FIELDS
+    .filter(([key]) => Number(formData?.[key] || formData?.form?.[key] || 0) === 1)
+    .map(([, label]) => label);
+
+  if (selected.length) return selected.join(", ");
+  const fallback = String(formData.installation_instructions || "").trim();
+  return fallback || "—";
+}
+
+function summarizePayment(formData = {}) {
+  const total = Number((formData.total_sale ?? formData.total ?? $("total").value) || 0);
+  const deposit = Number(formData.deposit || 0);
+  const balance = Number((formData.balance ?? $("balance").value) || 0);
+  const methods = [
+    ["payment_cash", "cash"],
+    ["payment_check", "check"],
+    ["payment_charge", "charge"],
+    ["payment_financing", "financing"]
+  ]
+    .filter(([key]) => Number(formData?.[key] || formData?.form?.[key] || 0) === 1)
+    .map(([, label]) => label);
+
+  const hasPaymentInfo = total > 0 || deposit > 0 || balance > 0 || methods.length;
+  if (!hasPaymentInfo) return "Not set";
+
+  const methodText = methods.length ? ` via ${methods.join("/")}` : "";
+  return `Total $${money(total)} • Deposit $${money(deposit)} • Balance $${money(balance)}${methodText}`;
+}
+
+function buildInstallerViewModel(formData = {}) {
+  const instructions = [String(formData.installation_instructions || "").trim(), String(formData.notes || "").trim()]
+    .filter(Boolean)
+    .join("\n\n");
+
+  return {
+    soldTo: String(formData.sold_to || "").trim() || "—",
+    directions: String(formData.directions || "").trim() || "—",
+    phones: [String(formData.home_phone || "").trim(), String(formData.cell_phone || "").trim()].filter(Boolean).join(" / ") || "—",
+    installDate: String(formData.installation_date || "").trim() || "—",
+    installedBy: String(formData.installed_by || "").trim() || "—",
+    materials: summarizeMaterials(formData.items || []),
+    rooms: summarizeRooms(formData),
+    payment: summarizePayment(formData),
+    notes: instructions || "—"
+  };
+}
+
+function renderInstallerView(model) {
+  $("i_sold_to").textContent = model.soldTo;
+  $("i_directions").textContent = model.directions;
+  $("i_phones").textContent = model.phones;
+  $("i_install_date").textContent = model.installDate;
+  $("i_installed_by").textContent = model.installedBy;
+  $("i_materials").textContent = model.materials;
+  $("i_rooms").textContent = model.rooms;
+  $("i_payment").textContent = model.payment;
+  $("i_notes").textContent = model.notes;
+}
+
 function syncInstallerPanelFromForm() {
-  $("i_sold_to").textContent = $("sold_to").value.trim() || "—";
-  $("i_directions").textContent = $("directions").value.trim() || "—";
-  $("i_phones").textContent = [$("home_phone").value.trim(), $("cell_phone").value.trim()].filter(Boolean).join(" / ") || "—";
-  $("i_install_date").textContent = $("installation_date").value || "—";
-  $("i_installed_by").textContent = $("installed_by").value.trim() || "—";
-  $("i_instructions").textContent = $("installation_instructions").value.trim() || "—";
+  renderInstallerView(buildInstallerViewModel(readForm()));
 }
 
 function setFieldError(fieldId, msg) {
@@ -429,6 +513,7 @@ async function del() {
 }
 
 function newInvoice() {
+  toggleInstaller(false);
   fillForm({ ...DEFAULT_FORM, id: null, form: null, items: DEFAULT_FORM.items.map((it) => ({ ...it })) });
   $("reviewPanel").classList.add("hidden");
   setStatus("ok", "new", true);
@@ -470,8 +555,10 @@ async function uploadScan(file) {
 }
 
 function toggleInstaller(on) {
-  $("installerPanel").classList.toggle("hidden", !on);
-  document.querySelector(".content .panel").classList.toggle("hidden", on);
+  installerMode = !!on;
+  $("installerPanel").classList.toggle("hidden", !installerMode);
+  $("editorPanel").classList.toggle("hidden", installerMode);
+  $("btnInstaller").textContent = installerMode ? "📝 Full Editor" : "📱 Installer View";
 }
 
 async function init() {
@@ -508,7 +595,7 @@ async function init() {
     e.target.value = "";
   });
 
-  $("btnInstaller").addEventListener("click", () => toggleInstaller(true));
+  $("btnInstaller").addEventListener("click", () => toggleInstaller(!installerMode));
   $("btnBack").addEventListener("click", () => toggleInstaller(false));
 
   await checkHealth();

@@ -17,7 +17,7 @@
     </div>
 
     <div class="actions">
-      <button id="btnInstaller" class="btn">📱 Field View</button>
+      <button id="btnInstaller" class="btn">📱 Installer View</button>
       <button id="btnNew" class="btn">✨ New Invoice</button>
       <button id="btnSave" class="btn primary">💾 Save</button>
       <button id="btnDelete" class="btn danger">🗑️ Delete</button>
@@ -39,7 +39,7 @@
     </aside>
 
     <section class="content">
-      <div class="panel">
+      <div id="editorPanel" class="panel">
         <div class="panelhead">
           <h1>📋 Invoice / Work Order</h1>
           <span id="status" class="pill">ready</span>
@@ -213,11 +213,14 @@
 
         <div class="installerCard">
           <div class="k">Customer</div><div class="v" id="i_sold_to">—</div>
-          <div class="k">Address</div><div class="v" id="i_directions">—</div>
+          <div class="k">Address / Directions</div><div class="v" id="i_directions">—</div>
           <div class="k">Phones</div><div class="v" id="i_phones">—</div>
           <div class="k">Install Date</div><div class="v" id="i_install_date">—</div>
           <div class="k">Installed By</div><div class="v" id="i_installed_by">—</div>
-          <div class="k">Instructions</div><div class="v" id="i_instructions">—</div>
+          <div class="k">Material Summary</div><div class="v" id="i_materials">—</div>
+          <div class="k">Room / Install Section</div><div class="v" id="i_rooms">—</div>
+          <div class="k">Payment / Balance</div><div class="v" id="i_payment">—</div>
+          <div class="k">Notes / Instructions</div><div class="v" id="i_notes">—</div>
         </div>
 
         <div class="installerBtns">
