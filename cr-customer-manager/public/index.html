@@ -203,30 +203,55 @@
         </details>
       </div>
 
-      <div id="installerPanel" class="panel installer hidden">
+      <section id="installerPanel" class="panel hidden">
         <div class="panelhead">
           <h1>📱 Field Installer View</h1>
-          <div class="muted">Essential job information for installers</div>
         </div>
 
-        <div class="installerCard">
-          <div class="k">Customer</div><div class="v" id="i_sold_to">—</div>
-          <div class="k">Address / Directions</div><div class="v" id="i_directions">—</div>
-          <div class="k">Phones</div><div class="v" id="i_phones">—</div>
-          <div class="k">Install Date</div><div class="v" id="i_install_date">—</div>
-          <div class="k">Installed By</div><div class="v" id="i_installed_by">—</div>
-          <div class="k">Material Summary</div><div class="v" id="i_materials">—</div>
-          <div class="k">Room / Install Section</div><div class="v" id="i_rooms">—</div>
-          <div class="k">Payment / Balance</div><div class="v" id="i_payment">—</div>
-          <div class="k">Notes / Instructions</div><div class="v" id="i_notes">—</div>
+        <button id="btnBack" class="btn">← Back to Editor</button>
+
+        <div class="installer-field">
+          <label>Sold To</label>
+          <span id="i_sold_to">—</span>
+        </div>
+        <div class="installer-field">
+          <label>Directions / Address</label>
+          <span id="i_directions">—</span>
+        </div>
+        <div class="installer-field">
+          <label>Phones</label>
+          <span id="i_phones">—</span>
+        </div>
+        <div class="installer-field">
+          <label>Install Date</label>
+          <span id="i_install_date">—</span>
+        </div>
+        <div class="installer-field">
+          <label>Installed By</label>
+          <span id="i_installed_by">—</span>
+        </div>
+        <div class="installer-field">
+          <label>Materials</label>
+          <span id="i_materials">—</span>
+        </div>
+        <div class="installer-field">
+          <label>Rooms</label>
+          <span id="i_rooms">—</span>
+        </div>
+        <div class="installer-field">
+          <label>Payment</label>
+          <span id="i_payment">—</span>
+        </div>
+        <div class="installer-field">
+          <label>Notes</label>
+          <span id="i_notes">—</span>
         </div>
 
         <div class="installerBtns">
-          <button id="btnBack" class="btn">⬅️ Back to Editor</button>
-          <button id="btnPdf2" class="btn primary">🖨️ Print Work Order Form</button>
-          <button id="btnOpenScan2" class="btn">📷 View Original Scan</button>
+          <button id="btnPdf2" class="btn">🖨️ Print Work Order Form</button>
+          <button id="btnOpenScan2" class="btn">📷 View Scan</button>
         </div>
-      </div>
+      </section>
     </section>
   </main>
 
