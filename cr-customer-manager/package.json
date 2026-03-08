@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "electron": "electron .",
+    "electron:build": "electron-builder build --win"
   },
   "dependencies": {
     "better-sqlite3": "11.3.0",
@@ -17,6 +19,9 @@
     "tesseract.js": "5.1.1"
   },
   "devDependencies": {
-    "sharp": "^0.33.5"
-  }
+    "sharp": "^0.33.5",
+    "electron": "^30.x",
+    "electron-builder": "^24.x"
+  },
+  "main": "electron/main.js"
 }
