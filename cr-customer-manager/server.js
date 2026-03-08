@@ -6,7 +6,7 @@ import multer from "multer";
 import PDFDocument from "pdfkit";
 
 import { openDb, computeTotals } from "./db.js";
-import { ocrImage } from "./ocr.js";
+import { convertPdfToImage, ocrImage } from "./ocr.js";
 import { extractFromOCR } from "./parse.js";
 
 const PORT = process.env.PORT || 3005;
@@ -637,8 +637,32 @@ app.post("/api/upload", (req, res) => {
       const dest = path.join(UPLOADS_DIR, safeName);
       fs.renameSync(f.path, dest);
 
+      const ext = String(path.extname(f.originalname || safeName || "")).toLowerCase();
+      const mime = String(f.mimetype || "").toLowerCase();
+      const isPdf = ext === ".pdf" || mime === "application/pdf";
+
+      let ocrSourcePath = dest;
+      let tempPngPath = "";
+
+      if (isPdf) {
+        try {
+          tempPngPath = await convertPdfToImage(dest, TMP_DIR);
+          ocrSourcePath = tempPngPath;
+        } catch (pdfError) {
+          console.error("[upload-pdf-convert] failed", {
+            error: pdfError?.message,
+            source_filename: safeName,
+            source_path: `/uploads/${safeName}`
+          });
+          return res.status(422).json({
+            error: "PDF conversion failed",
+            code: "PDF_CONVERT_FAILED"
+          });
+        }
+      }
+
       try {
-        const ocrResult = await ocrImage(dest);
+        const ocrResult = await ocrImage(ocrSourcePath);
         const extracted = extractFromOCR(ocrResult.rawText, ocrResult);
 
         // Review-first import: do not write to DB yet.
@@ -670,6 +694,14 @@ app.post("/api/upload", (req, res) => {
           ocr_confidence: 0,
           low_confidence_fields: []
         });
+      } finally {
+        if (tempPngPath && fs.existsSync(tempPngPath)) {
+          try {
+            fs.unlinkSync(tempPngPath);
+          } catch (cleanupError) {
+            console.error("[upload-pdf-cleanup] failed", { error: cleanupError?.message, tempPngPath });
+          }
+        }
       }
     } catch (e) {
       console.error("[upload] failed", { error: e?.message, stack: e?.stack });

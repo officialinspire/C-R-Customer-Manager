@@ -1,5 +1,7 @@
 import fs from "fs";
+import path from "path";
 import Jimp from "jimp";
+import { fromPath } from "pdf2pic";
 import { createWorker } from "tesseract.js";
 
 let _workerPromise = null;
@@ -274,6 +276,25 @@ function buildLabeledText(fields, averageConfidence, lowConfidenceFields) {
     `Average Confidence: ${Math.round(averageConfidence)}%`,
     `Low Confidence Fields: ${lowConfidenceFields.join(", ") || "None"}`
   ].join("\n");
+}
+
+
+export async function convertPdfToImage(pdfPath, outputDir) {
+  if (!fs.existsSync(pdfPath)) throw new Error(`PDF file not found: ${pdfPath}`);
+
+  const sourceBase = path.parse(pdfPath).name.replace(/[^\w.-]+/g, "_") || "scan";
+  const saveFilename = `${sourceBase}_${Date.now()}`;
+
+  const convert = fromPath(pdfPath, {
+    density: 300,
+    format: "png",
+    savePath: outputDir,
+    saveFilename
+  });
+
+  const result = await convert(1, { responseType: "image" });
+  if (!result?.path) throw new Error("PDF conversion did not return an output path");
+  return result.path;
 }
 
 export async function ocrImage(imagePath) {
