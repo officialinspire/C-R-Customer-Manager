@@ -1,16 +1,78 @@
 const $ = (id) => document.getElementById(id);
 
+const DEFAULT_FORM = {
+  id: null,
+  invoice_number: "",
+  sold_to: "",
+  directions: "",
+  email: "",
+  order_date: "",
+  home_phone: "",
+  cell_phone: "",
+  installation_date: "",
+  installed_by: "",
+  salesperson: "",
+  tax_rate: 0,
+  deposit: 0,
+  installation_instructions: "",
+  notes: "",
+  raw_text: "",
+  source_path: "",
+  source_filename: "",
+  ocr_status: "pending",
+  ocr_confidence: 0,
+  heard_ad: 0,
+  heard_radio: 0,
+  heard_friend: 0,
+  heard_internet: 0,
+  heard_walkin: 0,
+  install_lvg_rm: 0,
+  install_din_rm: 0,
+  install_bdrm1: 0,
+  install_bdrm2: 0,
+  install_bdrm3: 0,
+  install_bdrm4: 0,
+  install_hall: 0,
+  install_stairs: 0,
+  install_closet: 0,
+  install_basement: 0,
+  install_fam_rm: 0,
+  payment_cash: 0,
+  payment_check: 0,
+  payment_charge: 0,
+  payment_financing: 0,
+  buyer_name: "",
+  buyer_date: "",
+  manufacturer: "",
+  size: "",
+  style: "",
+  color: "",
+  pad: "",
+  rug_pad: "",
+  unit_price: 0,
+  amount: 0,
+  items: [{ description: "Carpet / Rug", qty: 1, unit_price: 0, amount: 0 }],
+  form: null
+};
+
 let current = null;
+let statusTimer = null;
+let dirty = false;
 
 async function api(path, opts = {}) {
   const res = await fetch(path, opts);
-  if (!res.ok) {
-    const txt = await res.text().catch(() => "");
-    throw new Error(`${res.status} ${res.statusText} ${txt}`.slice(0, 400));
-  }
   const ct = res.headers.get("content-type") || "";
-  if (ct.includes("application/json")) return res.json();
-  return res.text();
+  const body = ct.includes("application/json") ? await res.json().catch(() => null) : await res.text().catch(() => "");
+
+  if (!res.ok) {
+    const message = typeof body === "string" ? body : body?.error || res.statusText;
+    const err = new Error(`${res.status} ${message}`.trim().slice(0, 500));
+    err.status = res.status;
+    err.body = body;
+    throw err;
+  }
+
+  return body;
 }
 
 function money(n) {
@@ -18,10 +80,96 @@ function money(n) {
   return (Math.round(v * 100) / 100).toFixed(2);
 }
 
-function recompute() {
+function normalizeInvoiceNumber(input) {
+  const raw = String(input || "").trim();
+  if (!raw) return "";
+  const digits = raw.replace(/[^0-9]/g, "");
+  if (!digits) return raw.toUpperCase();
+  return `CR ${digits.slice(0, 5).padStart(5, "0")}`;
+}
+
+function setStatus(type, text, persist = false) {
+  const statusEl = $("status");
+  clearTimeout(statusTimer);
+  statusEl.textContent = text;
+  statusEl.className = `pill status-${type}`;
+
+  if (!persist) {
+    statusTimer = setTimeout(() => {
+      const base = current?.id ? (dirty ? "unsaved changes" : "loaded") : "new";
+      setStatus(dirty ? "warn" : "ok", base, true);
+    }, 2200);
+  }
+}
+
+function markDirty() {
+  dirty = true;
+  setStatus("warn", current?.id ? "unsaved changes" : "new", true);
+}
+
+function syncInstallerPanelFromForm() {
+  $("i_sold_to").textContent = $("sold_to").value.trim() || "—";
+  $("i_directions").textContent = $("directions").value.trim() || "—";
+  $("i_phones").textContent = [$("home_phone").value.trim(), $("cell_phone").value.trim()].filter(Boolean).join(" / ") || "—";
+  $("i_install_date").textContent = $("installation_date").value || "—";
+  $("i_installed_by").textContent = $("installed_by").value.trim() || "—";
+  $("i_instructions").textContent = $("installation_instructions").value.trim() || "—";
+}
+
+function setFieldError(fieldId, msg) {
+  const input = $(fieldId);
+  const errId = `${fieldId}_err`;
+  let err = $(errId);
+  if (!input && !err) return;
+  if (!err && input) {
+    err = document.createElement("div");
+    err.id = errId;
+    err.className = "field-error";
+    input.insertAdjacentElement("afterend", err);
+  }
+  if (input && fieldId !== "itemsBody") input.classList.toggle("invalid", !!msg);
+  if (err) err.textContent = msg || "";
+}
+
+function clearErrors() {
+  document.querySelectorAll(".invalid").forEach((el) => el.classList.remove("invalid"));
+  document.querySelectorAll(".field-error").forEach((el) => {
+    el.textContent = "";
+  });
+}
+
+function validateForm() {
+  clearErrors();
+  const errors = {};
+
+  const soldTo = $("sold_to").value.trim();
+  if (!soldTo) errors.sold_to = "Customer name is required.";
+
+  const invRaw = $("invoice_number").value;
+  const normalized = normalizeInvoiceNumber(invRaw);
+  if (invRaw.trim() && !/^CR\s\d{5}$/.test(normalized)) {
+    errors.invoice_number = "Invoice number should be in CR ##### format.";
+  }
+
+  const deposit = Number($("deposit").value || 0);
+  const total = Number($("total").value || 0);
+  if (deposit < 0) errors.deposit = "Deposit cannot be negative.";
+  if (deposit > total) errors.deposit = "Deposit cannot be greater than total.";
+
+  if (!current?.items?.length) {
+    errors.itemsBody = "At least one item is required.";
+  } else {
+    const hasValidItem = current.items.some((item) => item.description || Number(item.amount) > 0 || Number(item.qty) > 0);
+    if (!hasValidItem) errors.itemsBody = "Add an item description or amount before saving.";
+  }
+
+  Object.entries(errors).forEach(([field, message]) => setFieldError(field, message));
+  return Object.keys(errors).length === 0;
+}
+
+function recompute(mark = false) {
   if (!current) return;
 
-  // amounts per row
   const rows = [...document.querySelectorAll("#itemsBody tr")];
   current.items = rows.map((tr, idx) => {
     const get = (name) => tr.querySelector(`[data-k="${name}"]`).value;
@@ -35,13 +183,13 @@ function recompute() {
 
     return {
       line_no: idx + 1,
-      description: get("description"),
-      manufacturer: get("manufacturer"),
-      size: get("size"),
-      style: get("style"),
-      color: get("color"),
-      pad: get("pad"),
-      rug_pad: get("rug_pad"),
+      description: get("description").trim(),
+      manufacturer: get("manufacturer").trim(),
+      size: get("size").trim(),
+      style: get("style").trim(),
+      color: get("color").trim(),
+      pad: get("pad").trim(),
+      rug_pad: get("rug_pad").trim(),
       qty,
       unit_price: unit,
       amount
@@ -59,6 +207,9 @@ function recompute() {
   $("sales_tax").value = money(salesTax);
   $("total").value = money(total);
   $("balance").value = money(balance);
+
+  syncInstallerPanelFromForm();
+  if (mark) markDirty();
 }
 
 function itemRow(it = {}) {
@@ -71,16 +222,16 @@ function itemRow(it = {}) {
     <td><input class="input" data-k="color" value="${escapeHtml(it.color || "")}"></td>
     <td><input class="input" data-k="pad" value="${escapeHtml(it.pad || "")}"></td>
     <td><input class="input" data-k="rug_pad" value="${escapeHtml(it.rug_pad || "")}"></td>
-    <td class="num"><input class="input" data-k="qty" type="number" step="0.01" value="${it.qty ?? 1}"></td>
-    <td class="num"><input class="input" data-k="unit_price" type="number" step="0.01" value="${it.unit_price ?? 0}"></td>
+    <td class="num"><input class="input" data-k="qty" type="number" step="0.01" min="0" value="${it.qty ?? 1}"></td>
+    <td class="num"><input class="input" data-k="unit_price" type="number" step="0.01" min="0" value="${it.unit_price ?? 0}"></td>
     <td class="num"><input class="input" data-k="amount" type="number" step="0.01" value="${money(it.amount ?? 0)}" readonly></td>
     <td class="num"><button class="xbtn" title="Remove">×</button></td>
   `;
   tr.querySelector(".xbtn").addEventListener("click", () => {
     tr.remove();
-    recompute();
+    recompute(true);
   });
-  tr.querySelectorAll("input").forEach((inp) => inp.addEventListener("input", recompute));
+  tr.querySelectorAll("input").forEach((inp) => inp.addEventListener("input", () => recompute(true)));
   return tr;
 }
 
@@ -95,9 +246,13 @@ function escapeHtml(s) {
 
 function readForm() {
   const form = current?.form || {};
+  const normalizedInvoice = normalizeInvoiceNumber($("invoice_number").value.trim());
+
   return {
+    ...DEFAULT_FORM,
+    ...current,
     id: current?.id || null,
-    invoice_number: $("invoice_number").value.trim(),
+    invoice_number: normalizedInvoice,
     sold_to: $("sold_to").value.trim(),
     directions: $("directions").value.trim(),
     email: $("email").value.trim(),
@@ -107,24 +262,17 @@ function readForm() {
     installation_date: $("installation_date").value,
     installed_by: $("installed_by").value.trim(),
     salesperson: $("salesperson").value.trim(),
-
     tax_rate: Number($("tax_rate").value || 0),
     deposit: Number($("deposit").value || 0),
-
     installation_instructions: $("installation_instructions").value,
     notes: $("notes").value,
-
     raw_text: $("raw_text").value,
     source_path: $("source_path").value,
-
     items: current?.items || [],
-
-    // Foundation for form-first architecture:
-    // persist normalized paper-form payload in parallel with legacy fields.
     form: {
       ...form,
       form_version: "paper-v1",
-      header_invoice_number: $("invoice_number").value.trim(),
+      header_invoice_number: normalizedInvoice,
       customer_name: $("sold_to").value.trim(),
       service_address: $("directions").value.trim(),
       customer_email: $("email").value.trim(),
@@ -145,45 +293,37 @@ function readForm() {
 }
 
 function fillForm(inv) {
-  current = inv;
+  current = { ...DEFAULT_FORM, ...inv, items: inv.items?.length ? inv.items : DEFAULT_FORM.items.slice() };
   current.form = inv.form || null;
+  dirty = false;
 
-  $("invoice_number").value = inv.invoice_number || "";
-  $("sold_to").value = inv.sold_to || "";
-  $("directions").value = inv.directions || "";
-  $("email").value = inv.email || "";
-  $("order_date").value = inv.order_date || "";
-  $("home_phone").value = inv.home_phone || "";
-  $("cell_phone").value = inv.cell_phone || "";
-  $("installation_date").value = inv.installation_date || "";
-  $("installed_by").value = inv.installed_by || "";
-  $("salesperson").value = inv.salesperson || "";
+  $("invoice_number").value = current.invoice_number || "";
+  $("sold_to").value = current.sold_to || "";
+  $("directions").value = current.directions || "";
+  $("email").value = current.email || current.customer_email || "";
+  $("order_date").value = current.order_date || "";
+  $("home_phone").value = current.home_phone || "";
+  $("cell_phone").value = current.cell_phone || "";
+  $("installation_date").value = current.installation_date || "";
+  $("installed_by").value = current.installed_by || "";
+  $("salesperson").value = current.salesperson || "";
 
-  $("tax_rate").value = inv.tax_rate ?? 0;
-  $("deposit").value = inv.deposit ?? 0;
+  $("tax_rate").value = current.tax_rate ?? 0;
+  $("deposit").value = current.deposit ?? 0;
 
-  $("installation_instructions").value = inv.installation_instructions || "";
-  $("notes").value = inv.notes || "";
+  $("installation_instructions").value = current.installation_instructions || "";
+  $("notes").value = current.notes || "";
 
-  $("source_path").value = inv.source_path || "";
-  $("raw_text").value = inv.raw_text || "";
+  $("source_path").value = current.source_path || "";
+  $("raw_text").value = current.raw_text || "";
 
   const body = $("itemsBody");
   body.innerHTML = "";
-  (inv.items?.length ? inv.items : [{ description: "Carpet / Rug", qty: 1, unit_price: 0 }]).forEach((it) => {
-    body.appendChild(itemRow(it));
-  });
+  current.items.forEach((it) => body.appendChild(itemRow(it)));
 
-  $("status").textContent = inv.id ? "loaded" : "new";
-  recompute();
-
-  // Installer panel mirror
-  $("i_sold_to").textContent = inv.sold_to || "—";
-  $("i_directions").textContent = inv.directions || "—";
-  $("i_phones").textContent = [inv.home_phone, inv.cell_phone].filter(Boolean).join(" / ") || "—";
-  $("i_install_date").textContent = inv.installation_date || "—";
-  $("i_installed_by").textContent = inv.installed_by || "—";
-  $("i_instructions").textContent = inv.installation_instructions || "—";
+  clearErrors();
+  recompute(false);
+  setStatus("ok", current.id ? "loaded" : "new", true);
 }
 
 async function refreshList(q = "") {
@@ -195,7 +335,7 @@ async function refreshList(q = "") {
     el.className = "result";
     el.innerHTML = `
       <div class="t">${escapeHtml(r.invoice_number || "(no invoice #)")} — ${escapeHtml(r.sold_to || "")}</div>
-      <div class="m">${escapeHtml(r.installation_date || "")} • $${money(r.total || 0)}</div>
+      <div class="m">${escapeHtml(r.installation_date || "")} • ${escapeHtml(r.home_phone || r.cell_phone || "")} • ${escapeHtml(r.directions || "")} • $${money(r.total || 0)}</div>
     `;
     el.addEventListener("click", async () => {
       const inv = await api(`/api/invoices/${r.id}`);
@@ -215,46 +355,38 @@ async function checkHealth() {
 }
 
 async function save() {
-  const statusEl = $("status");
+  recompute(false);
+  if (!validateForm()) {
+    setStatus("bad", "fix validation errors", true);
+    return;
+  }
+
   const btnSave = $("btnSave");
 
   try {
-    // Show saving state
-    statusEl.textContent = "saving...";
-    statusEl.style.borderColor = "#f59e0b";
-    statusEl.style.color = "#f59e0b";
+    setStatus("warn", "saving...", true);
     btnSave.disabled = true;
-    btnSave.style.opacity = "0.6";
 
-    recompute();
     const payload = readForm();
     const saved = await api("/api/invoices", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload)
     });
+
     await refreshList($("q").value.trim());
     fillForm(saved);
-
-    // Show success state
-    statusEl.textContent = "✓ saved!";
-    statusEl.style.borderColor = "#10b981";
-    statusEl.style.color = "#10b981";
-
-    // Reset after 2 seconds
-    setTimeout(() => {
-      statusEl.textContent = saved.id ? "loaded" : "new";
-      statusEl.style.borderColor = "";
-      statusEl.style.color = "";
-    }, 2000);
-  } catch(e) {
-    statusEl.textContent = "error!";
-    statusEl.style.borderColor = "#ef4444";
-    statusEl.style.color = "#ef4444";
+    setStatus("ok", "saved", false);
+  } catch (e) {
+    if (e.status === 409) {
+      setFieldError("invoice_number", "That invoice number already exists. Use another number.");
+      setStatus("bad", "duplicate invoice #", true);
+      return;
+    }
+    setStatus("bad", "save failed", true);
     throw e;
   } finally {
     btnSave.disabled = false;
-    btnSave.style.opacity = "1";
   }
 }
 
@@ -262,74 +394,27 @@ async function del() {
   if (!current?.id) return;
   if (!confirm("Delete this invoice? This action cannot be undone.")) return;
 
-  const statusEl = $("status");
   const btnDelete = $("btnDelete");
 
   try {
-    statusEl.textContent = "deleting...";
-    statusEl.style.borderColor = "#ef4444";
-    statusEl.style.color = "#ef4444";
+    setStatus("bad", "deleting...", true);
     btnDelete.disabled = true;
-    btnDelete.style.opacity = "0.6";
 
     await api(`/api/invoices/${current.id}`, { method: "DELETE" });
-    current = null;
     newInvoice();
     await refreshList($("q").value.trim());
-
-    statusEl.textContent = "✓ deleted";
-    statusEl.style.borderColor = "#10b981";
-    statusEl.style.color = "#10b981";
-
-    setTimeout(() => {
-      statusEl.textContent = "new";
-      statusEl.style.borderColor = "";
-      statusEl.style.color = "";
-    }, 2000);
-  } catch(e) {
-    statusEl.textContent = "error!";
-    statusEl.style.borderColor = "#ef4444";
-    statusEl.style.color = "#ef4444";
+    setStatus("ok", "deleted", false);
+  } catch (e) {
+    setStatus("bad", "delete failed", true);
     throw e;
   } finally {
     btnDelete.disabled = false;
-    btnDelete.style.opacity = "1";
   }
 }
 
 function newInvoice() {
-  fillForm({
-    id: null,
-    invoice_number: "",
-    sold_to: "",
-    directions: "",
-    email: "",
-    order_date: "",
-    home_phone: "",
-    cell_phone: "",
-    installation_date: "",
-    installed_by: "",
-    salesperson: "",
-    tax_rate: 0,
-    deposit: 0,
-    installation_instructions: "",
-    notes: "",
-    raw_text: "",
-    source_path: "",
-    items: [{ description: "Carpet / Rug", qty: 1, unit_price: 0, amount: 0 }],
-    form: null
-  });
-
-  const statusEl = $("status");
-  statusEl.textContent = "✨ new invoice";
-  statusEl.style.borderColor = "#3b82f6";
-  statusEl.style.color = "#3b82f6";
-
-  setTimeout(() => {
-    statusEl.textContent = "new";
-    statusEl.style.borderColor = "";
-    statusEl.style.color = "";
-  }, 2000);
+  fillForm({ ...DEFAULT_FORM, id: null, form: null, items: DEFAULT_FORM.items.map((it) => ({ ...it })) });
+  setStatus("ok", "new", true);
 }
 
 function openPdf() {
@@ -343,38 +428,45 @@ function openScan() {
   window.open(p, "_blank");
 }
 
-async function uploadScan(file) {
-  const statusEl = $("status");
+async function rescanCurrentInvoice() {
+  if (!current?.id) {
+    setStatus("bad", "save invoice before re-scan", false);
+    return;
+  }
 
   try {
-    statusEl.textContent = "processing scan...";
-    statusEl.style.borderColor = "#f59e0b";
-    statusEl.style.color = "#f59e0b";
+    setStatus("warn", "re-scanning...", true);
+    const scanned = await api(`/api/invoices/${current.id}/rescan`, { method: "POST" });
+    fillForm(scanned);
+    await refreshList($("q").value.trim());
+    setStatus("ok", "scan reprocessed", false);
+  } catch (e) {
+    if (e.status === 400 || e.status === 404) {
+      setStatus("bad", e.body?.error || "scan source missing", true);
+      return;
+    }
+    setStatus("bad", "re-scan failed", true);
+    throw e;
+  }
+}
+
+async function uploadScan(file) {
+  try {
+    setStatus("warn", "processing scan...", true);
 
     const fd = new FormData();
     fd.append("scan", file);
     const saved = await api("/api/upload", { method: "POST", body: fd });
     await refreshList($("q").value.trim());
     fillForm(saved);
-
-    statusEl.textContent = "✓ scan processed!";
-    statusEl.style.borderColor = "#10b981";
-    statusEl.style.color = "#10b981";
-
-    setTimeout(() => {
-      statusEl.textContent = "loaded";
-      statusEl.style.borderColor = "";
-      statusEl.style.color = "";
-    }, 3000);
-  } catch(e) {
-    statusEl.textContent = "scan error!";
-    statusEl.style.borderColor = "#ef4444";
-    statusEl.style.color = "#ef4444";
-    setTimeout(() => {
-      statusEl.textContent = "ready";
-      statusEl.style.borderColor = "";
-      statusEl.style.color = "";
-    }, 3000);
+    setStatus("ok", "scan processed", false);
+  } catch (e) {
+    if (e.status === 409) {
+      setStatus("bad", "scan created duplicate invoice #", true);
+      setFieldError("invoice_number", "A record with this OCR invoice number already exists.");
+      return;
+    }
+    setStatus("bad", "scan upload failed", true);
     throw e;
   }
 }
@@ -385,7 +477,6 @@ function toggleInstaller(on) {
 }
 
 async function init() {
-  // bind
   $("q").addEventListener("input", () => refreshList($("q").value.trim()));
   $("btnNew").addEventListener("click", newInvoice);
   $("btnSave").addEventListener("click", () => save().catch(alert));
@@ -394,24 +485,25 @@ async function init() {
   $("btnPdf2").addEventListener("click", openPdf);
   $("btnOpenScan").addEventListener("click", openScan);
   $("btnOpenScan2").addEventListener("click", openScan);
+  $("btnRerunOcr").addEventListener("click", () => rescanCurrentInvoice().catch(alert));
 
   $("btnAddItem").addEventListener("click", () => {
     $("itemsBody").appendChild(itemRow({ description: "", qty: 1, unit_price: 0, amount: 0 }));
-    recompute();
+    recompute(true);
   });
 
-  ["invoice_number","sold_to","directions","email","order_date","home_phone","cell_phone","installation_date","installed_by","salesperson","installation_instructions","notes","tax_rate","deposit"]
-    .forEach((id) => $(id).addEventListener("input", recompute));
+  ["invoice_number", "sold_to", "directions", "email", "order_date", "home_phone", "cell_phone", "installation_date", "installed_by", "salesperson", "installation_instructions", "notes", "tax_rate", "deposit"]
+    .forEach((id) => $(id).addEventListener("input", () => recompute(true)));
+
+  $("invoice_number").addEventListener("blur", () => {
+    $("invoice_number").value = normalizeInvoiceNumber($("invoice_number").value);
+    recompute(true);
+  });
 
   $("fileScan").addEventListener("change", (e) => {
     const f = e.target.files?.[0];
     if (f) uploadScan(f).catch(alert);
     e.target.value = "";
-  });
-
-  $("btnRerunOcr").addEventListener("click", async () => {
-    // simplest: re-upload the original scan isn't available; this button is a placeholder.
-    alert("Re-run OCR currently works via Manual Upload Scan or dropping a scan into /inbox.");
   });
 
   $("btnInstaller").addEventListener("click", () => toggleInstaller(true));

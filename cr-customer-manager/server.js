@@ -40,6 +40,14 @@ function asBoolInt(v) {
   return v ? 1 : 0;
 }
 
+function normalizeInvoiceNumber(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const digits = raw.replace(/[^0-9]/g, "");
+  if (!digits) return raw.toUpperCase();
+  return `CR ${digits.slice(0, 5).padStart(5, "0")}`;
+}
+
 app.get("/api/health", (req, res) => {
   res.json({ ok: true, db: "ok", time: nowISO(), port: PORT });
 });
@@ -76,7 +84,7 @@ function buildInvoicePayload(payload) {
 
   return {
     id: payload.id || null,
-    invoice_number: payload.invoice_number || form.header_invoice_number || "",
+    invoice_number: normalizeInvoiceNumber(payload.invoice_number || form.header_invoice_number || ""),
     sold_to: payload.sold_to || form.customer_name || "",
     directions: payload.directions || form.service_address || "",
     customer_email: payload.customer_email || payload.email || form.customer_email || "",
@@ -287,7 +295,7 @@ app.get("/api/invoices", (req, res) => {
   const q = String(req.query.q || "").trim();
   if (!q) {
     const rows = db.prepare(`
-      SELECT id, invoice_number, sold_to, installation_date, total_sale AS total, updated_at
+      SELECT id, invoice_number, sold_to, directions, home_phone, cell_phone, installation_date, total_sale AS total, updated_at
       FROM invoices
       ORDER BY updated_at DESC
       LIMIT 250
@@ -297,12 +305,22 @@ app.get("/api/invoices", (req, res) => {
 
   const like = `%${q}%`;
   const rows = db.prepare(`
-    SELECT id, invoice_number, sold_to, installation_date, total_sale AS total, updated_at
+    SELECT id, invoice_number, sold_to, directions, home_phone, cell_phone, installation_date, total_sale AS total, updated_at
     FROM invoices
-    WHERE invoice_number LIKE ? OR sold_to LIKE ? OR directions LIKE ? OR home_phone LIKE ? OR cell_phone LIKE ?
+    WHERE invoice_number LIKE ?
+      OR sold_to LIKE ?
+      OR directions LIKE ?
+      OR home_phone LIKE ?
+      OR cell_phone LIKE ?
+      OR customer_email LIKE ?
+      OR installed_by LIKE ?
+      OR salesperson LIKE ?
+      OR installation_instructions LIKE ?
+      OR notes LIKE ?
+      OR raw_text LIKE ?
     ORDER BY updated_at DESC
     LIMIT 250
-  `).all(like, like, like, like, like);
+  `).all(like, like, like, like, like, like, like, like, like, like, like);
 
   res.json(rows);
 });
@@ -323,6 +341,43 @@ app.post("/api/invoices", (req, res) => {
       return res.status(409).json({ error: "invoice_number must be unique when provided" });
     }
     res.status(500).json({ error: "Save failed" });
+  }
+});
+
+app.post("/api/invoices/:id/rescan", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const existing = getInvoice(id);
+    if (!existing) return res.status(404).json({ error: "Invoice not found" });
+
+    const sourceCandidate = existing.source_filename
+      ? path.join(UPLOADS_DIR, existing.source_filename)
+      : path.join(ROOT, String(existing.source_path || "").replace(/^\//, ""));
+
+    if (!sourceCandidate || !fs.existsSync(sourceCandidate)) {
+      return res.status(400).json({ error: "This invoice has no available source scan to reprocess" });
+    }
+
+    const raw = await ocrImageToText(sourceCandidate);
+    const extracted = extractFromOCR(raw);
+    const saved = upsertInvoice({
+      ...existing,
+      ...extracted,
+      id,
+      raw_text: raw,
+      source_filename: existing.source_filename || path.basename(sourceCandidate),
+      source_path: existing.source_path || `/uploads/${path.basename(sourceCandidate)}`,
+      ocr_status: "processed",
+      ocr_confidence: Number(existing.ocr_confidence || 0)
+    });
+
+    res.json(saved);
+  } catch (e) {
+    console.error(e);
+    if (String(e.message || "").includes("idx_invoices_invoice_number_nonempty_unique")) {
+      return res.status(409).json({ error: "invoice_number must be unique when provided" });
+    }
+    res.status(500).json({ error: "Re-scan failed" });
   }
 });
 
