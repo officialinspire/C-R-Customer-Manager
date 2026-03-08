@@ -80,6 +80,7 @@ const INSTALL_ROOM_FIELDS = [
 ];
 
 let installerMode = false;
+let overlayMode = false;
 
 let current = null;
 let statusTimer = null;
@@ -525,6 +526,7 @@ async function del() {
 
 function newInvoice() {
   toggleInstaller(false);
+  toggleOverlay(false);
   fillForm({ ...DEFAULT_FORM, id: null, form: null, items: DEFAULT_FORM.items.map((it) => ({ ...it })) });
   $("reviewPanel").classList.add("hidden");
   setStatus("ok", "new", true);
@@ -565,11 +567,28 @@ async function uploadScan(file) {
   }
 }
 
+
+function setOverlayButtonState() {
+  const btn = $("btnOverlay");
+  btn.setAttribute("aria-pressed", String(overlayMode));
+  btn.textContent = overlayMode ? "📄 Standard Editor Mode" : "🧾 Form Overlay Mode";
+}
+
+function toggleOverlay(on) {
+  overlayMode = !!on;
+  $("editorPanel").classList.toggle("overlay-mode", overlayMode);
+  setOverlayButtonState();
+}
+
 function toggleInstaller(on) {
   installerMode = !!on;
   $("installerPanel").classList.toggle("hidden", !installerMode);
   $("editorPanel").classList.toggle("hidden", installerMode);
   $("btnInstaller").textContent = installerMode ? "📝 Full Editor" : "📱 Installer View";
+
+  const overlayBtn = $("btnOverlay");
+  overlayBtn.disabled = installerMode;
+  overlayBtn.classList.toggle("disabled", installerMode);
 }
 
 async function init() {
@@ -607,7 +626,10 @@ async function init() {
   });
 
   $("btnInstaller").addEventListener("click", () => toggleInstaller(!installerMode));
+  $("btnOverlay").addEventListener("click", () => toggleOverlay(!overlayMode));
   $("btnBack").addEventListener("click", () => toggleInstaller(false));
+
+  setOverlayButtonState();
 
   await checkHealth();
   await refreshList("");
