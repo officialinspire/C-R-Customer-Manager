@@ -291,6 +291,31 @@ label{
   font-size: 16px;
 }
 
+
+@media (max-width:1200px){
+  .overlay-mode .form-overlay-sheet{
+    position:static;
+    display:grid;
+    grid-template-columns:1fr;
+    min-height:auto;
+    padding:18px;
+  }
+  .overlay-mode .overlay-title,
+  .overlay-mode .overlay-field{
+    position:static;
+    width:auto !important;
+  }
+}
+
+@media print{
+  body{background:#fff}
+  .topbar,.side,#installerPanel,.debug{display:none !important}
+  .layout{display:block; max-width:none; padding:0}
+  .panel{border:none; box-shadow:none; padding:0}
+  #editorPanel:not(.overlay-mode) .form-overlay-sheet{border:none; padding:0}
+  #editorPanel.overlay-mode .form-overlay-sheet{min-height:auto; page-break-inside:avoid}
+}
+
 @media (max-width: 980px){
   .layout{grid-template-columns:1fr; padding: 14px; gap: 16px}
   .side{position:relative; top:auto; height:auto; padding: 16px}
@@ -320,6 +345,76 @@ label{
   .btn{padding: 10px 14px; font-size: 13px; min-width: 120px}
   .actions{gap: 8px}
 }
+
+
+.btn.disabled,
+.btn:disabled{
+  opacity:.6;
+  cursor:not-allowed;
+  transform:none;
+}
+
+.form-overlay-sheet{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:16px;
+  padding:18px;
+  border:2px dashed var(--line);
+  border-radius:16px;
+  background:linear-gradient(180deg,#ffffff 0%,#f8fafc 100%);
+}
+.overlay-title{
+  grid-column:1 / -1;
+  margin:0;
+  font-weight:800;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  color:var(--muted);
+  font-size:13px;
+}
+.form-overlay-sheet .overlay-field.span2{grid-column:1 / -1}
+
+.overlay-mode .form-overlay-sheet{
+  position:relative;
+  display:block;
+  min-height:980px;
+  border:2px solid #cbd5e1;
+  background:
+    repeating-linear-gradient(0deg, rgba(15, 23, 42, 0.03) 0, rgba(15, 23, 42, 0.03) 1px, transparent 1px, transparent 90px),
+    linear-gradient(180deg,#ffffff 0%,#f8fafc 100%);
+  border-radius:12px;
+  padding:24px;
+}
+.overlay-mode .overlay-title{
+  position:absolute;
+  top:12px;
+  left:24px;
+}
+.overlay-mode .overlay-field{
+  position:absolute;
+}
+.overlay-mode .overlay-field .input{
+  background:rgba(255,255,255,.92);
+}
+.overlay-mode .overlay-field.invoice{top:52px; left:24px; width:35%;}
+.overlay-mode .overlay-field.order-date{top:52px; right:24px; width:24%;}
+.overlay-mode .overlay-field.sold-to{top:148px; left:24px; width:58%;}
+.overlay-mode .overlay-field.salesperson{top:148px; right:24px; width:34%;}
+.overlay-mode .overlay-field.directions{top:244px; left:24px; width:calc(100% - 48px);}
+.overlay-mode .overlay-field.email{top:338px; left:24px; width:45%;}
+.overlay-mode .overlay-field.home-phone{top:338px; left:calc(45% + 38px); width:24%;}
+.overlay-mode .overlay-field.cell-phone{top:338px; right:24px; width:24%;}
+.overlay-mode .overlay-field.install-date{top:434px; left:24px; width:36%;}
+.overlay-mode .overlay-field.installed-by{top:434px; left:calc(36% + 38px); width:30%;}
+.overlay-mode .overlay-field.tax-rate{top:434px; right:24px; width:24%;}
+.overlay-mode .overlay-field.deposit{top:530px; left:24px; width:24%;}
+.overlay-mode .overlay-field.subtotal{top:530px; left:calc(24% + 38px); width:24%;}
+.overlay-mode .overlay-field.sales-tax{top:530px; right:calc(24% + 38px); width:24%;}
+.overlay-mode .overlay-field.total{top:626px; left:24px; width:32%;}
+.overlay-mode .overlay-field.balance{top:626px; left:calc(32% + 38px); width:32%;}
+.overlay-mode .overlay-field.instructions{top:722px; left:24px; width:calc(100% - 48px);}
+.overlay-mode .overlay-field.notes{top:844px; left:24px; width:calc(100% - 48px);}
+
 
 .review-panel{border:2px solid var(--line); border-radius:14px; padding:16px; background:var(--panel2); margin-bottom:20px}
 .review-grid{display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-top:10px}

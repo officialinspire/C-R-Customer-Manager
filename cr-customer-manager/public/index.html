@@ -18,6 +18,7 @@
 
     <div class="actions">
       <button id="btnInstaller" class="btn">📱 Installer View</button>
+      <button id="btnOverlay" class="btn" aria-pressed="false">🧾 Form Overlay Mode</button>
       <button id="btnNew" class="btn">✨ New Invoice</button>
       <button id="btnSave" class="btn primary">💾 Save</button>
       <button id="btnDelete" class="btn danger">🗑️ Delete</button>
@@ -45,54 +46,90 @@
           <span id="status" class="pill">ready</span>
         </div>
 
-        <div class="grid2">
-          <div>
+        <section id="formOverlaySheet" class="form-overlay-sheet" aria-label="C&R paper-style form overlay">
+          <div class="overlay-title">C&amp;R Carpet &amp; Rug Work Order</div>
+
+          <div class="overlay-field invoice">
             <label>Invoice # (CR #####)</label>
             <input id="invoice_number" class="input" placeholder="CR 24512" />
           </div>
-          <div>
+          <div class="overlay-field order-date">
             <label>Order Date</label>
             <input id="order_date" type="date" class="input" />
           </div>
 
-          <div>
+          <div class="overlay-field sold-to">
             <label>Sold To</label>
             <input id="sold_to" class="input" />
           </div>
-          <div>
+          <div class="overlay-field salesperson">
             <label>Salesperson</label>
             <input id="salesperson" class="input" />
           </div>
 
-          <div class="span2">
+          <div class="overlay-field directions span2">
             <label>Directions / Address</label>
             <input id="directions" class="input" />
           </div>
 
-          <div>
+          <div class="overlay-field email">
             <label>Customer Email</label>
             <input id="email" class="input" />
           </div>
-          <div>
+          <div class="overlay-field home-phone">
             <label>Home Phone</label>
             <input id="home_phone" class="input" />
           </div>
 
-          <div>
+          <div class="overlay-field cell-phone">
             <label>Cell Phone</label>
             <input id="cell_phone" class="input" />
           </div>
-          <div>
+          <div class="overlay-field install-date">
             <label>Installation Date</label>
             <input id="installation_date" type="date" class="input" />
           </div>
 
-          <div>
+          <div class="overlay-field installed-by">
             <label>Installed By</label>
             <input id="installed_by" class="input" />
           </div>
-          <div></div>
-        </div>
+          <div class="overlay-field tax-rate">
+            <label>Tax Rate (%)</label>
+            <input id="tax_rate" type="number" step="0.01" class="input" value="0" />
+          </div>
+
+          <div class="overlay-field deposit">
+            <label>Deposit ($)</label>
+            <input id="deposit" type="number" step="0.01" class="input" value="0" />
+          </div>
+          <div class="overlay-field subtotal">
+            <label>Merchandise Total ($)</label>
+            <input id="subtotal" type="number" step="0.01" class="input" readonly />
+          </div>
+
+          <div class="overlay-field sales-tax">
+            <label>Sales Tax ($)</label>
+            <input id="sales_tax" type="number" step="0.01" class="input" readonly />
+          </div>
+          <div class="overlay-field total">
+            <label>Total Sale ($)</label>
+            <input id="total" type="number" step="0.01" class="input" readonly />
+          </div>
+          <div class="overlay-field balance">
+            <label>Balance ($)</label>
+            <input id="balance" type="number" step="0.01" class="input" readonly />
+          </div>
+
+          <div class="overlay-field instructions span2">
+            <label>Installation Instructions / Rooms</label>
+            <textarea id="installation_instructions" class="input area" rows="3"></textarea>
+          </div>
+          <div class="overlay-field notes span2">
+            <label>Notes</label>
+            <textarea id="notes" class="input area" rows="3"></textarea>
+          </div>
+        </section>
 
         <hr class="sep" />
 
@@ -146,46 +183,7 @@
 
         <div class="rowhead">
           <h2>💰 Totals</h2>
-          <div class="muted">✨ Auto-calculated</div>
-        </div>
-
-        <div class="grid3">
-          <div>
-            <label>Tax Rate (%)</label>
-            <input id="tax_rate" type="number" step="0.01" class="input" value="0" />
-          </div>
-          <div>
-            <label>Deposit ($)</label>
-            <input id="deposit" type="number" step="0.01" class="input" value="0" />
-          </div>
-          <div>
-            <label>Merchandise Total ($)</label>
-            <input id="subtotal" type="number" step="0.01" class="input" readonly />
-          </div>
-
-          <div>
-            <label>Sales Tax ($)</label>
-            <input id="sales_tax" type="number" step="0.01" class="input" readonly />
-          </div>
-          <div>
-            <label>Total Sale ($)</label>
-            <input id="total" type="number" step="0.01" class="input" readonly />
-          </div>
-          <div>
-            <label>Balance ($)</label>
-            <input id="balance" type="number" step="0.01" class="input" readonly />
-          </div>
-        </div>
-
-        <div class="grid1">
-          <div>
-            <label>Installation Instructions / Rooms</label>
-            <textarea id="installation_instructions" class="input area" rows="3"></textarea>
-          </div>
-          <div>
-            <label>Notes</label>
-            <textarea id="notes" class="input area" rows="3"></textarea>
-          </div>
+          <div class="muted">✨ Auto-calculated (shown in overlay sheet)</div>
         </div>
 
         <div class="grid2">
