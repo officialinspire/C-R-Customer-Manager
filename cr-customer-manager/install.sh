@@ -16,6 +16,23 @@ rm -rf node_modules package-lock.json
 echo "[3/5] Installing npm deps..."
 npm install
 
+# Auto-fetch credentials if not present
+if [ ! -f ".env" ] || [ ! -f "oauth-credentials.json" ]; then
+  echo "Fetching credentials..."
+  # Replace YOUR_PAT with your personal access token
+  git clone https://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@github.com/officialinspire/cr-crm-config.git temp-config 2>/dev/null
+  if [ -d "temp-config" ]; then
+    [ -f "temp-config/.env" ] && cp temp-config/.env .env
+    [ -f "temp-config/oauth-credentials.json" ] && cp temp-config/oauth-credentials.json oauth-credentials.json
+    rm -rf temp-config
+    echo "Credentials installed."
+  else
+    echo "WARNING: Could not fetch credentials. Add .env manually."
+  fi
+else
+  echo "Credentials already present, skipping."
+fi
+
 echo "[4b/5] Generating PWA icons..."
 node scripts/generate-icons.js || echo "[WARN] Icon generation failed — add icons manually to public/icons/"
 
