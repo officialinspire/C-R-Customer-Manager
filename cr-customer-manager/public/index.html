@@ -267,6 +267,29 @@
         </div>
       </section>
     </section>
+
+      <details class="system-status-panel">
+        <summary>⚙️ System Status & Backup</summary>
+        <div class="status-grid">
+          <div>
+            <strong>Last Backup:</strong>
+            <span id="backupDate">checking...</span>
+          </div>
+          <div>
+            <strong>Backup Invoice Count:</strong>
+            <span id="backupCount">—</span>
+          </div>
+          <div>
+            <strong>Last Cache Sync:</strong>
+            <span id="cacheSync">—</span>
+          </div>
+          <div>
+            <strong>Drive Sync:</strong>
+            <span id="driveStatusDetail">—</span>
+          </div>
+        </div>
+        <button id="btnBackupNow" class="btn small">💾 Backup Now</button>
+      </details>
   </main>
 
   <div id="driveModal" class="drive-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="driveModalTitle">
