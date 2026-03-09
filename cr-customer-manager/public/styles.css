@@ -291,6 +291,58 @@ label{
   font-size: 16px;
 }
 
+/* === INSTALLER VIEW — MOBILE OPTIMIZED === */
+.installer-panel {
+  padding: 16px;
+  max-width: 600px;
+  margin: 0 auto;
+}
+.installer-field {
+  background: #1e1e2e;
+  border: 1px solid #444;
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+.installer-field label {
+  display: block;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #888;
+  margin-bottom: 4px;
+}
+.installer-field span {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #f0f0f0;
+  word-break: break-word;
+  line-height: 1.4;
+}
+.installer-field.highlight span { color: #c9a84c; font-size: 1.3rem; }
+.installer-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+.installer-actions .btn { flex: 1; min-width: 140px; padding: 14px; font-size: 1rem; }
+
+/* High contrast for bright environments */
+@media (prefers-color-scheme: light) {
+  .installer-panel { background: #fff; }
+  .installer-field { background: #f5f5f5; border-color: #ccc; }
+  .installer-field span { color: #111; }
+  .installer-field label { color: #555; }
+}
+
+/* Large touch targets on mobile */
+@media (max-width: 768px) {
+  .installer-field span { font-size: 1.25rem; }
+  .topbar .actions { flex-wrap: wrap; gap: 6px; }
+  .topbar .actions .btn { font-size: 0.8rem; padding: 8px 10px; }
+}
+
 
 @media (max-width:1200px){
   .overlay-mode .form-overlay-sheet{
