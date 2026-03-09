@@ -10,6 +10,30 @@ if (-not $nodeVersion) {
   winget install OpenJS.NodeJS.LTS
 }
 
+# Auto-fetch credentials if not present
+$envFile = Join-Path (Get-Location) ".env"
+$credFile = Join-Path (Get-Location) "oauth-credentials.json"
+
+if (-not (Test-Path $envFile) -or -not (Test-Path $credFile)) {
+  Write-Host "Fetching credentials from private config..." -ForegroundColor Yellow
+  
+  # Replace YOUR_PAT with the personal access token you just created
+  git clone https://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@github.com/officialinspire/cr-crm-config.git temp-config 2>$null
+  
+  if (Test-Path "temp-config") {
+    if (Test-Path "temp-config\.env") { Copy-Item "temp-config\.env" ".env" }
+    if (Test-Path "temp-config\oauth-credentials.json") {
+      Copy-Item "temp-config\oauth-credentials.json" "oauth-credentials.json"
+    }
+    Remove-Item -Recurse -Force "temp-config"
+    Write-Host "Credentials installed successfully." -ForegroundColor Green
+  } else {
+    Write-Host "WARNING: Could not fetch credentials. You may need to add .env manually." -ForegroundColor Red
+  }
+} else {
+  Write-Host "Credentials already present, skipping fetch." -ForegroundColor Cyan
+}
+
 # Install dependencies
 npm install
 
