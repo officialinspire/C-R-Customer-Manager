@@ -1,46 +1,46 @@
 #!/usr/bin/env bash
-NODE_MAJOR=$(node -e "process.exit(parseInt(process.version.slice(1)))" 2>/dev/null; echo $?)
-if [ "$(node -e 'process.exit(parseInt(process.version.slice(1).split(".")[0]))')" -lt 18 ] 2>/dev/null; then
-  echo "ERROR: Node.js 18+ is required. Found: $(node --version 2>/dev/null || echo 'not installed')"
-  exit 1
-fi
 set -e
 
-echo "[1/5] Installing OS deps..."
+if ! command -v node >/dev/null 2>&1; then
+  echo "ERROR: Node.js 18+ is required. Found: not installed"
+  exit 1
+fi
+
+NODE_MAJOR="$(node -p "process.versions.node.split('.')[0]" 2>/dev/null || echo 0)"
+if [ "${NODE_MAJOR}" -lt 18 ]; then
+  echo "ERROR: Node.js 18+ is required. Found: $(node --version 2>/dev/null || echo 'unknown')"
+  exit 1
+fi
+
+echo "[1/6] Installing OS deps..."
 sudo apt-get update
 sudo apt-get install -y build-essential python3 make g++ pkg-config sqlite3 libsqlite3-dev fonts-dejavu-core fontconfig ca-certificates
 
-echo "[2/5] Cleaning old node_modules + lock (prevents RC deps)..."
-rm -rf node_modules package-lock.json
-
-echo "[3/5] Installing npm deps..."
+echo "[2/6] Installing npm deps..."
 npm install
 
-# Auto-fetch credentials if not present
-if [ ! -f ".env" ] || [ ! -f "oauth-credentials.json" ]; then
-  echo "Fetching credentials..."
-  # Replace YOUR_PAT with your personal access token
-  git clone https://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@github.com/officialinspire/cr-crm-config.git temp-config 2>/dev/null
-  if [ -d "temp-config" ]; then
-    [ -f "temp-config/.env" ] && cp temp-config/.env .env
-    [ -f "temp-config/oauth-credentials.json" ] && cp temp-config/oauth-credentials.json oauth-credentials.json
-    rm -rf temp-config
-    echo "Credentials installed."
-  else
-    echo "WARNING: Could not fetch credentials. Add .env manually."
-  fi
-else
-  echo "Credentials already present, skipping."
-fi
-
-echo "[4b/5] Generating PWA icons..."
-node scripts/generate-icons.js || echo "[WARN] Icon generation failed — add icons manually to public/icons/"
-
-echo "[4/5] Rebuilding better-sqlite3 (native binding) ..."
+echo "[3/6] Rebuilding better-sqlite3 (native binding)..."
 npm rebuild better-sqlite3 --build-from-source || true
 
-echo "[5/5] Creating folders..."
-mkdir -p data inbox uploads tmp public
+echo "[4/6] Creating folders..."
+mkdir -p data inbox uploads tmp public public/icons backups scripts
 
-echo "Done."
-echo "Start with: ./run.sh"
+echo "[5/6] Generating PWA icons..."
+node scripts/generate-icons.js || echo "[WARN] Icon generation failed — add icons manually to public/icons/"
+
+echo "[6/6] Checking Google Drive credentials..."
+if [ ! -f "./credentials.json" ]; then
+  echo "[Drive] No Google credentials found. To enable Drive sync:"
+  echo "  1. Download service account JSON from Google Cloud Console"
+  echo "  2. Save as credentials.json in this folder"
+  echo "  3. Set GOOGLE_CREDENTIALS_PATH=./credentials.json before starting"
+fi
+
+echo
+echo "Install complete."
+echo "Next steps:"
+echo "  1. Start the app: ./run.sh"
+echo "  2. Open on this machine: http://localhost:3005 (or your PORT value)"
+echo "  3. PWA setup: open in Chrome/Edge, then use 'Install app' from the address bar/menu"
+echo "  4. Mobile access: ensure phone and server are on the same Wi-Fi, then open the local network URL shown by ./run.sh"
+echo "  5. On mobile browser, use 'Add to Home Screen' to install the PWA"
