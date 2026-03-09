@@ -37,6 +37,10 @@
         <input id="fileScan" type="file" accept="image/*,.pdf,.tif,.tiff" />
       </label>
       <span id="dbStatus" class="pill">checking…</span>
+      <button id="btnDriveConnect" class="btn drive-header-btn" title="Connect Google Drive backup">
+        <span id="driveHeaderIcon">☁️</span>
+        <span id="driveHeaderLabel">Drive</span>
+      </button>
       <span id="syncStatus" class="pill">⬆️ synced</span>
     </div>
   </header>
@@ -264,6 +268,112 @@
       </section>
     </section>
   </main>
+
+  <div id="driveModal" class="drive-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="driveModalTitle">
+    <div class="drive-modal" tabindex="-1">
+
+      <div class="drive-modal-header">
+        <div class="drive-modal-icon">
+          <svg viewBox="0 0 87.3 78" width="38" height="34" xmlns="http://www.w3.org/2000/svg">
+            <path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3L27.5 53H0c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
+            <path d="M43.65 25L29.9 0c-1.35.8-2.5 1.9-3.3 3.3L1.2 48.5A9.06 9.06 0 000 53h27.5z" fill="#00ac47"/>
+            <path d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75L86.1 57.5c.8-1.4 1.2-2.95 1.2-4.5H59.8l5.85 12.35z" fill="#ea4335"/>
+            <path d="M43.65 25L57.4 0H29.9z" fill="#00832d"/>
+            <path d="M59.8 53H87.3L73.55 29.6 57.4 0 43.65 25z" fill="#2684fc"/>
+            <path d="M43.65 25L27.5 53l16.15 23.8L59.8 53z" fill="#ffba00"/>
+          </svg>
+        </div>
+        <div>
+          <h2 id="driveModalTitle" class="drive-modal-title">Google Drive Sync</h2>
+          <p class="drive-modal-subtitle">Automatically back up invoices to your Google Drive</p>
+        </div>
+        <button id="driveModalClose" class="drive-modal-close" aria-label="Close modal">✕</button>
+      </div>
+
+      <div id="driveStateDisconnected" class="drive-state">
+        <div class="drive-feature-list">
+          <div class="drive-feature">
+            <span class="drive-feature-icon">☁️</span>
+            <div>
+              <strong>Auto-backup every save</strong>
+              <span>Every invoice syncs to a "CR-CRM-Invoices" folder in your Drive</span>
+            </div>
+          </div>
+          <div class="drive-feature">
+            <span class="drive-feature-icon">📷</span>
+            <div>
+              <strong>Scan files included</strong>
+              <span>Uploaded photos and PDFs are backed up alongside invoice data</span>
+            </div>
+          </div>
+          <div class="drive-feature">
+            <span class="drive-feature-icon">🔒</span>
+            <div>
+              <strong>Your account, your data</strong>
+              <span>Only accesses files it creates — not your other Drive content</span>
+            </div>
+          </div>
+        </div>
+        <button id="btnGoogleSignIn" class="drive-google-btn">
+          <svg viewBox="0 0 24 24" width="20" height="20" xmlns="http://www.w3.org/2000/svg">
+            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+          </svg>
+          Sign in with Google
+        </button>
+        <p class="drive-modal-hint">You'll be redirected to Google, then brought right back here.</p>
+      </div>
+
+      <div id="driveStateConnecting" class="drive-state hidden">
+        <div class="drive-connecting-anim">
+          <div class="drive-spinner"></div>
+          <p>Connecting to Google Drive…</p>
+        </div>
+      </div>
+
+      <div id="driveStateConnected" class="drive-state hidden">
+        <div class="drive-connected-card">
+          <img id="driveUserAvatar" class="drive-avatar" src="" alt="" style="display:none" />
+          <div id="driveAvatarFallback" class="drive-avatar-fallback">G</div>
+          <div class="drive-user-info">
+            <strong id="driveUserName">—</strong>
+            <span id="driveUserEmail">—</span>
+          </div>
+          <div class="drive-connected-badge">✓ Connected</div>
+        </div>
+        <div class="drive-sync-info">
+          <div class="drive-sync-row">
+            <span>📁 Folder</span>
+            <strong>CR-CRM-Invoices</strong>
+          </div>
+          <div class="drive-sync-row">
+            <span>🔄 Auto-sync</span>
+            <strong>Every save</strong>
+          </div>
+          <div class="drive-sync-row" id="driveFolderRow" style="display:none">
+            <span>🔗 Link</span>
+            <a id="driveFolderLink" href="#" target="_blank" rel="noopener" class="drive-link">Open in Drive ↗</a>
+          </div>
+        </div>
+        <button id="btnDriveDisconnect" class="drive-disconnect-btn">
+          Disconnect Google Drive
+        </button>
+      </div>
+
+      <div id="driveStateError" class="drive-state hidden">
+        <div class="drive-error-card">
+          <span class="drive-error-icon">⚠️</span>
+          <p id="driveErrorMsg">Something went wrong. Please try again.</p>
+          <button id="btnDriveRetry" class="drive-google-btn" style="margin-top:20px">
+            Try Again
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
 
   <script src="index.js"></script>
   <script>
