@@ -6,6 +6,7 @@ import chokidar from "chokidar";
 import multer from "multer";
 import PDFDocument from "pdfkit";
 
+import { scheduleDaily } from "./backup.js";
 import { openDb, computeTotals } from "./db.js";
 import { convertPdfToImage, ocrImage } from "./ocr.js";
 import { extractFromOCR } from "./parse.js";
@@ -40,6 +41,10 @@ fs.mkdirSync(TMP_DIR, { recursive: true });
 fs.mkdirSync(PUBLIC_DIR, { recursive: true });
 
 const db = openDb(DATA_DB);
+const BACKUP_DIR = path.join(ROOT, "backups");
+fs.mkdirSync(BACKUP_DIR, { recursive: true });
+const cancelBackup = scheduleDaily(DATA_DB, UPLOADS_DIR, BACKUP_DIR);
+void cancelBackup;
 
 async function initDriveSync() {
   try {
@@ -255,6 +260,30 @@ function textOrBlank(value) {
 
 app.get("/api/health", (req, res) => {
   res.json({ ok: true, db: "ok", time: nowISO(), port: PORT });
+});
+
+app.get('/api/backup/status', async (req, res) => {
+  try {
+    const dirs = fs.readdirSync(BACKUP_DIR).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort().reverse();
+    const latest = dirs[0] || null;
+    const latestPath = latest ? path.join(BACKUP_DIR, latest, 'invoices-export.json') : null;
+    const invoiceCount = latestPath && fs.existsSync(latestPath)
+      ? JSON.parse(fs.readFileSync(latestPath)).length
+      : 0;
+    res.json({ latest, backupCount: dirs.length, invoiceCount });
+  } catch (e) {
+    res.json({ latest: null, backupCount: 0, invoiceCount: 0, error: e.message });
+  }
+});
+
+app.post('/api/backup/now', async (req, res) => {
+  try {
+    const { runDailyBackup } = await import('./backup.js');
+    const result = await runDailyBackup(DATA_DB, UPLOADS_DIR, BACKUP_DIR);
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
 });
 
 // Google OAuth — redirect to Google consent page
