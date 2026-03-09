@@ -1,105 +1,90 @@
-# C&R Carpet & Rug — Customer Manager
+# C&R Carpet & Rug — Customer Manager (CRM)
 
-Local-first web app for C&R's handwritten-style work-order flow:
-- Create/edit/search customer invoices and installation work orders.
-- Upload a scan (image or PDF), run OCR, review extracted fields, then save.
-- Print/export a clean work-order PDF.
-- Store all data in local SQLite (`./data/cr.sqlite`).
+C&R CRM is a local-first web + desktop-friendly app for managing handwritten work orders, invoices, OCR intake, and printing from one place.
 
-## Local run
+## Documentation
+
+- Deployment and setup guide: [`../DEPLOY.md`](../DEPLOY.md)
+- App source root: `./`
+
+## Features
+
+- Invoice/work-order CRUD with SQLite persistence (`./data/cr.sqlite`)
+- OCR workflow for image/PDF scans with editable review drafts
+- Search across invoice number, customer details, notes, OCR text, and item metadata
+- Print/export work-order PDFs from saved invoices
+- PWA support (install to phone home screen, offline-capable app shell)
+- Google Drive integration for cloud sync/auth flows
+- Automated nightly backups at 3:00 AM + manual backup action
+- Desktop launcher scripts for Windows (`START-CR-CRM.bat`, `STOP-CR-CRM.bat`)
+
+## Local Run
 
 ### 1) Install dependencies
-
-If this is a fresh machine, use the helper:
 
 ```bash
 chmod +x install.sh run.sh
 ./install.sh
 ```
 
-If you already have build tools and Node installed, a minimal install is:
+Or minimal install if toolchain already exists:
 
 ```bash
 npm install
 ```
 
-### 2) Start the app
+### 2) Start app
 
 ```bash
 ./run.sh
 # or: npm start
 ```
 
-Open: `http://localhost:3005`
+Open: <http://localhost:3005>
 
-Health check endpoint:
+Health check:
 
 ```bash
 curl http://localhost:3005/api/health
 ```
 
-## Core workflows
+## Core Workflows
 
-### Upload scan workflow
+### Upload + OCR
 
-1. Click **📷 Upload Scan** and choose an image/PDF scan of the paper form.
-2. The server saves the file in `./uploads` and runs OCR.
-3. The UI loads a **draft** record (not saved yet) with extracted fields.
-4. Review/edit fields, then click **💾 Save**.
+1. Click **📷 Upload Scan** and choose a PDF/image.
+2. File is stored under `./uploads` and OCR is processed.
+3. Review extracted fields in draft mode.
+4. Edit and click **💾 Save**.
 
-Notes:
-- Supported upload types: PDF, JPEG, PNG, TIFF.
-- Max file size: 15 MB.
-- `./inbox` watcher archives dropped image files into `./uploads` for manual review/import.
+### Search + Manage
 
-### OCR review flow
+- **✨ New Invoice** creates a blank record.
+- **💾 Save** creates/updates invoice and line items.
+- **🔍 Search** filters records by key customer/job fields.
+- **🗑️ Delete** removes invoice + item lines.
 
-1. After upload (or **🔄 Re-scan** on an existing invoice), the **OCR Review Draft** panel appears.
-2. Low-confidence or empty fields are visually flagged.
-3. Validate key fields (invoice #, sold-to, address, phones, dates, salesperson).
-4. Save once data matches the paper form.
+### Print
 
-### Save / search / load / new / delete
-
-- **✨ New Invoice** starts a blank record.
-- **💾 Save** creates/updates the invoice.
-- **🔍 Search** filters by invoice #, customer name, phone, address, installer, notes, OCR text, and item metadata.
-- Click a search result to load it.
-- **🗑️ Delete** removes the invoice and its item lines.
-
-### Print/export flow
-
-1. Load a saved invoice.
+1. Open a saved invoice.
 2. Click **🖨️ Print Work Order Form**.
-3. A generated PDF opens at `/api/invoices/:id/pdf` for print/save.
+3. Generated PDF opens at `/api/invoices/:id/pdf`.
 
-## Schema + migration notes
-
-- Main table: `invoices`
-- Detail lines: `invoice_items`
-- Automatic migration runs on server start via `openDb()`.
-- Current schema version is tracked with SQLite `PRAGMA user_version`.
-- Additional idempotent migration bookkeeping is in `schema_migrations`.
-
-Recent migration behavior includes:
-- Backfilling canonical fields from legacy columns (`email`, `subtotal`, `total`).
-- Normalizing source scan paths to `/uploads/<file>`.
-- Normalizing date fields to `YYYY-MM-DD` where possible.
-- Enforcing uniqueness for non-empty `invoice_number` values.
-
-## Data locations
+## Data Paths
 
 - Database: `./data/cr.sqlite`
-- Uploaded scans: `./uploads`
+- Uploads: `./uploads`
 - Inbox drop folder: `./inbox`
-- Multer temp files: `./tmp`
+- Temp files: `./tmp`
+- Backups: `./backups/YYYY-MM-DD/`
 
 ## Troubleshooting
 
-- If `better-sqlite3` fails to load, run:
+- If `better-sqlite3` fails to load:
 
 ```bash
 npm rebuild better-sqlite3 --build-from-source
 ```
 
-- If OCR is poor, use cleaner/straighter scans and re-run OCR from the invoice screen.
+- If OCR quality is poor, use cleaner scans and re-run OCR.
+- For deployment, mobile setup, Drive setup, and backup expectations, use [`../DEPLOY.md`](../DEPLOY.md).
