@@ -772,3 +772,8 @@ label{
   .drive-modal-header { padding: 16px; }
   .drive-state { padding: 18px 16px 20px; }
 }
+
+
+.system-status-panel { margin: 24px; padding: 16px; border: 1px solid #333; border-radius: 8px; }
+.system-status-panel summary { cursor: pointer; font-size: 0.9rem; }
+.status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0; font-size: 0.85rem; }

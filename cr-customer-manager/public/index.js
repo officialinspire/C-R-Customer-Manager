@@ -805,6 +805,28 @@ async function init() {
   window.addEventListener('offline', updateOnlineStatus);
   updateOnlineStatus();
 
+  async function refreshSystemStatus() {
+    try {
+      const bs = await api('/api/backup/status');
+      document.getElementById('backupDate').textContent = bs.latest || 'never';
+      document.getElementById('backupCount').textContent = bs.invoiceCount || '0';
+    } catch {
+      document.getElementById('backupDate').textContent = 'unavailable';
+    }
+  }
+
+  document.getElementById('btnBackupNow')?.addEventListener('click', async () => {
+    try {
+      const r = await api('/api/backup/now', { method: 'POST' });
+      alert('Backup complete: ' + r.invoiceCount + ' invoices saved to ' + r.date);
+      refreshSystemStatus();
+    } catch (e) {
+      alert('Backup failed: ' + e.message);
+    }
+  });
+
+  refreshSystemStatus();
+
   // Listen for sync queue events from service worker
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.addEventListener('message', (event) => {
