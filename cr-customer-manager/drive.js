@@ -242,17 +242,18 @@ export async function getDriveSyncStatus(oauthClient) {
   try {
     const raw = await fsPromises.readFile(TOKEN_FILE_PATH, 'utf8');
     const tokens = JSON.parse(raw);
+    const driveFolderId = cachedFolderId || null;
 
     return {
       connected: true,
       email: tokens.email,
       name: tokens.name,
       picture: tokens.picture,
-      folderId: cachedFolderId || null,
+      folderId: driveFolderId,
       folderName: DRIVE_FOLDER_NAME,
-      folderLink: cachedFolderId
-        ? `https://drive.google.com/drive/folders/${cachedFolderId}`
-        : null
+      ...(driveFolderId
+        ? { folderLink: `https://drive.google.com/drive/folders/${driveFolderId}` }
+        : {})
     };
   } catch {
     return { connected: false };
