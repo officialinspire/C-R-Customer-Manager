@@ -85,6 +85,8 @@ let overlayMode = false;
 let current = null;
 let statusTimer = null;
 let dirty = false;
+let cacheModule = null;
+let cacheDb = null;
 
 async function api(path, opts = {}) {
   const res = await fetch(path, opts);
@@ -588,7 +590,21 @@ function fillForm(inv) {
 }
 
 async function refreshList(q = "") {
-  const rows = await api(`/api/invoices${q ? `?q=${encodeURIComponent(q)}` : ""}`);
+  let rows;
+  try {
+    rows = await api(`/api/invoices${q ? `?q=${encodeURIComponent(q)}` : ""}`);
+    if (cacheModule && cacheDb) {
+      await cacheModule.cacheInvoices(cacheDb, rows);
+    }
+  } catch (networkError) {
+    if (!navigator.onLine && cacheModule && cacheDb) {
+      rows = await cacheModule.getCachedInvoices(cacheDb, q);
+      setStatus('warn', 'offline — showing cached data', true);
+    } else {
+      throw networkError;
+    }
+  }
+
   const wrap = $("results");
   wrap.innerHTML = "";
 
@@ -774,6 +790,10 @@ async function init() {
   setOverlayButtonState();
 
   await checkHealth();
+  cacheModule = await import('/cache.js');
+  cacheDb = await cacheModule.openCacheDb();
+  const allInvoices = await api('/api/invoices');
+  await cacheModule.cacheInvoices(cacheDb, allInvoices);
 
   function updateOnlineStatus() {
     const offline = !navigator.onLine;
