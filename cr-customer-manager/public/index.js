@@ -331,6 +331,146 @@ function escapeHtml(s) {
     .replaceAll("'", "&#039;");
 }
 
+const DriveModal = {
+  _db: null,
+
+  init() {
+    // Wire up all button listeners
+    document.getElementById('btnDriveConnect')
+      .addEventListener('click', () => this.open());
+
+    document.getElementById('driveModalClose')
+      .addEventListener('click', () => this.close());
+
+    document.getElementById('driveModal')
+      .addEventListener('click', (e) => {
+        if (e.target === document.getElementById('driveModal')) this.close();
+      });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') this.close();
+    });
+
+    document.getElementById('btnGoogleSignIn')
+      .addEventListener('click', () => {
+        this.showState('connecting');
+        window.location.href = '/auth/google';
+      });
+
+    document.getElementById('btnDriveDisconnect')
+      .addEventListener('click', async () => {
+        if (!confirm('Disconnect Google Drive? Invoices already synced will remain in Drive.')) return;
+        try {
+          await api('/api/drive/disconnect', { method: 'POST' });
+          await this.refresh();
+        } catch (e) {
+          this.showError('Disconnect failed: ' + e.message);
+        }
+      });
+
+    document.getElementById('btnDriveRetry')
+      .addEventListener('click', () => this.showState('disconnected'));
+
+    // Check if returning from OAuth flow
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('drive') === 'connected') {
+      history.replaceState({}, '', '/');
+      this.open();
+      this.showState('connecting');
+      setTimeout(() => this.refresh(), 800);
+    } else if (params.get('drive') === 'error') {
+      history.replaceState({}, '', '/');
+      this.open();
+      this.showError('Google authorization failed. Please try again.');
+    }
+
+    // Initial silent status refresh (updates header button only)
+    this.refresh(true);
+  },
+
+  open() {
+    document.getElementById('driveModal').classList.remove('hidden');
+    document.querySelector('.drive-modal').focus();
+    this.refresh();
+  },
+
+  close() {
+    document.getElementById('driveModal').classList.add('hidden');
+  },
+
+  showState(state) {
+    const states = ['Disconnected', 'Connecting', 'Connected', 'Error'];
+    states.forEach(s => {
+      document.getElementById('driveState' + s)
+        .classList.toggle('hidden', s.toLowerCase() !== state);
+    });
+  },
+
+  showError(msg) {
+    document.getElementById('driveErrorMsg').textContent = msg || 'Something went wrong.';
+    this.showState('error');
+  },
+
+  updateHeaderBtn(status) {
+    const btn = document.getElementById('btnDriveConnect');
+    const icon = document.getElementById('driveHeaderIcon');
+    const label = document.getElementById('driveHeaderLabel');
+    if (status.connected) {
+      icon.textContent = '☁️';
+      label.textContent = status.email ? status.email.split('@')[0] : 'Drive';
+      btn.classList.add('drive-connected');
+      btn.title = 'Drive connected as ' + (status.email || 'Google account');
+    } else {
+      icon.textContent = '☁️';
+      label.textContent = 'Drive';
+      btn.classList.remove('drive-connected');
+      btn.title = 'Connect Google Drive backup';
+    }
+  },
+
+  async refresh(silentOnly = false) {
+    try {
+      const status = await api('/api/drive/status');
+      this.updateHeaderBtn(status);
+
+      if (silentOnly) return;
+
+      if (status.connected) {
+        // Populate connected state UI
+        document.getElementById('driveUserName').textContent = status.name || 'Google User';
+        document.getElementById('driveUserEmail').textContent = status.email || '';
+
+        const avatar = document.getElementById('driveUserAvatar');
+        const fallback = document.getElementById('driveAvatarFallback');
+        if (status.picture) {
+          avatar.src = status.picture;
+          avatar.style.display = 'block';
+          fallback.style.display = 'none';
+        } else {
+          avatar.style.display = 'none';
+          fallback.style.display = 'flex';
+          fallback.textContent = (status.name || 'G').charAt(0).toUpperCase();
+        }
+
+        const folderRow = document.getElementById('driveFolderRow');
+        const folderLink = document.getElementById('driveFolderLink');
+        if (status.folderLink) {
+          folderLink.href = status.folderLink;
+          folderRow.style.display = '';
+        } else {
+          folderRow.style.display = 'none';
+        }
+
+        this.showState('connected');
+      } else {
+        this.showState('disconnected');
+      }
+    } catch (e) {
+      if (!silentOnly) this.showError('Could not reach server: ' + e.message);
+    }
+  }
+};
+
 function readForm() {
   const form = current?.form || {};
   const normalizedInvoice = normalizeInvoiceNumber($("invoice_number").value.trim());
@@ -660,6 +800,7 @@ async function init() {
 
   await refreshList("");
   newInvoice();
+  DriveModal.init();
 }
 
 init().catch((e) => alert(e.message));
