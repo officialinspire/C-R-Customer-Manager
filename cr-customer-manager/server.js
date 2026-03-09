@@ -8,6 +8,18 @@ import PDFDocument from "pdfkit";
 import { openDb, computeTotals } from "./db.js";
 import { convertPdfToImage, ocrImage } from "./ocr.js";
 import { extractFromOCR } from "./parse.js";
+import {
+  buildOAuthClient,
+  getAuthUrl,
+  exchangeCodeForTokens,
+  loadStoredTokens,
+  revokeTokens,
+  getDriveClient,
+  ensureCRFolder,
+  uploadInvoiceToDrive,
+  uploadScanToDrive,
+  getDriveSyncStatus
+} from "./drive.js";
 
 const PORT = process.env.PORT || 3005;
 const ROOT = process.cwd();
@@ -17,6 +29,9 @@ const DATA_DB = path.join(ROOT, "data", "cr.sqlite");
 const INBOX_DIR = path.join(ROOT, "inbox");
 const UPLOADS_DIR = path.join(ROOT, "uploads");
 const TMP_DIR = path.join(ROOT, "tmp");
+const oauthClient = buildOAuthClient();
+let driveClient = null;
+let driveFolderId = null;
 
 fs.mkdirSync(INBOX_DIR, { recursive: true });
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -24,6 +39,25 @@ fs.mkdirSync(TMP_DIR, { recursive: true });
 fs.mkdirSync(PUBLIC_DIR, { recursive: true });
 
 const db = openDb(DATA_DB);
+
+async function initDriveSync() {
+  try {
+    const tokens = await loadStoredTokens(oauthClient);
+    if (!tokens) {
+      console.log("[Drive] No stored tokens — user can sign in via UI");
+      return;
+    }
+    driveClient = await getDriveClient(oauthClient);
+    driveFolderId = await ensureCRFolder(driveClient);
+    console.log("[Drive] Auto-connected as:", tokens.email, "| Folder:", driveFolderId);
+  } catch (e) {
+    console.warn("[Drive] Auto-connect failed:", e.message, "— sign in again via UI");
+    driveClient = null;
+    driveFolderId = null;
+  }
+}
+
+initDriveSync();
 
 const app = express();
 app.use((req, res, next) => {
@@ -220,6 +254,54 @@ function textOrBlank(value) {
 
 app.get("/api/health", (req, res) => {
   res.json({ ok: true, db: "ok", time: nowISO(), port: PORT });
+});
+
+// Google OAuth — redirect to Google consent page
+app.get('/auth/google', (req, res) => {
+  const url = getAuthUrl(oauthClient);
+  res.redirect(url);
+});
+
+// Google OAuth — handle callback after user approves
+app.get('/auth/google/callback', async (req, res) => {
+  const code = String(req.query.code || '').trim();
+  if (!code) {
+    return res.status(400).send('Missing authorization code. Please try signing in again.');
+  }
+  try {
+    const profile = await exchangeCodeForTokens(oauthClient, code);
+    driveClient = await getDriveClient(oauthClient);
+    driveFolderId = await ensureCRFolder(driveClient);
+    console.log('[Drive] Signed in as:', profile.email, '| Folder:', driveFolderId);
+    res.redirect('/?drive=connected');
+  } catch (e) {
+    console.error('[Drive] OAuth callback failed:', e.message);
+    res.redirect('/?drive=error&reason=' + encodeURIComponent(e.message));
+  }
+});
+
+// Drive status — used by frontend to show connection state
+app.get('/api/drive/status', async (req, res) => {
+  try {
+    const status = await getDriveSyncStatus(oauthClient);
+    res.json({ ...status, folderId: driveFolderId || status.folderId });
+  } catch (e) {
+    res.json({ connected: false, error: e.message });
+  }
+});
+
+// Drive disconnect — revoke tokens and clear state
+app.post('/api/drive/disconnect', async (req, res) => {
+  try {
+    await revokeTokens(oauthClient);
+    driveClient = null;
+    driveFolderId = null;
+    console.log('[Drive] Disconnected');
+    res.json({ ok: true, message: 'Disconnected from Google Drive' });
+  } catch (e) {
+    console.error('[Drive] Disconnect failed:', e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
 });
 
 function getInvoice(id) {
@@ -530,6 +612,16 @@ app.get("/api/invoices/:id", (req, res) => {
 app.post("/api/invoices", (req, res) => {
   try {
     const saved = upsertInvoice(req.body || {});
+    if (driveClient && driveFolderId) {
+      setImmediate(async () => {
+        try {
+          await uploadInvoiceToDrive(driveClient, driveFolderId, saved);
+          console.log('[Drive] Synced invoice:', saved.id);
+        } catch (e) {
+          console.warn('[Drive] Invoice sync failed for', saved.id, '—', e.message);
+        }
+      });
+    }
     res.json(saved);
   } catch (e) {
     console.error("[invoice-save] failed", { error: e?.message, code: e?.code, details: e?.details });
@@ -671,6 +763,17 @@ app.post("/api/upload", (req, res) => {
       try {
         const ocrResult = await ocrImage(ocrSourcePath);
         const extracted = extractFromOCR(ocrResult.rawText, ocrResult);
+
+        if (driveClient && driveFolderId && dest) {
+          setImmediate(async () => {
+            try {
+              await uploadScanToDrive(driveClient, driveFolderId, dest, Date.now());
+              console.log('[Drive] Synced scan:', safeName);
+            } catch (e) {
+              console.warn('[Drive] Scan sync failed:', e.message);
+            }
+          });
+        }
 
         // Review-first import: do not write to DB yet.
         return res.json({
